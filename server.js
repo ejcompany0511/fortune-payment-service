@@ -48,155 +48,160 @@ app.post('/api/store-session', (req, res) => {
 // Get payment session data from main service
 async function getPaymentSession(sessionId) {
   try {
-    console.log(`Fetching session data from: ${MAIN_SERVICE_URL}/api/payment/session/${sessionId}`);
+    console.log('Getting session for ID:', sessionId);
+    
+    // First check local storage
+    if (paymentSessions.has(sessionId)) {
+      console.log('Found session in local storage');
+      return paymentSessions.get(sessionId);
+    }
+    
+    // Fallback: get from main service if not found locally
+    console.log('Session not found locally, fetching from main service...');
     const response = await axios.get(`${MAIN_SERVICE_URL}/api/payment/session/${sessionId}`);
-    console.log('Session data received:', response.data);
     return response.data;
+    
   } catch (error) {
-    console.error('Failed to get payment session:', error);
-    console.error('Error details:', error.response?.data || error.message);
+    console.error('Error getting payment session:', error);
     return null;
   }
 }
 
-// Payment page route
+// Payment page
 app.get('/payment', async (req, res) => {
   try {
-    const { session: sessionId } = req.query;
+    const sessionId = req.query.session;
     
     if (!sessionId) {
-      return res.status(400).render('error', { 
-        message: '잘못된 결제 요청입니다.',
+      return res.render('error', { 
+        message: '결제 세션 ID가 필요합니다.',
         returnUrl: MAIN_SERVICE_URL 
       });
     }
-
-    // First check local storage, then fallback to main service
-    let sessionData = paymentSessions.get(sessionId);
+    
+    const sessionData = await getPaymentSession(sessionId);
     
     if (!sessionData) {
-      console.log(`Session ${sessionId} not found in local storage, fetching from main service`);
-      sessionData = await getPaymentSession(sessionId);
-    } else {
-      console.log(`Found session ${sessionId} in local storage:`, sessionData);
-    }
-    
-    if (!sessionData) {
-      return res.status(404).render('error', { 
+      return res.render('error', { 
         message: '결제 세션을 찾을 수 없습니다.',
         returnUrl: MAIN_SERVICE_URL 
       });
     }
-
-    // Generate merchant_uid for this payment
-    const merchantUid = `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Store session with merchant_uid
-    paymentSessions.set(merchantUid, {
-      ...sessionData,
-      sessionId,
-      merchantUid
-    });
-
-    console.log('Generated merchant_uid:', merchantUid);
-    console.log('Session data prepared:', sessionData);
-
-    // Render payment page with session data
+    const merchantUid = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    
+    // Store merchant_uid mapping for verification
+    paymentSessions.set(merchantUid, sessionData);
+    
     res.render('payment', {
-      sessionData: sessionData,
-      merchantUid: merchantUid,
-      impKey: IMP_KEY,
+      merchantUid,
+      packageName: sessionData.packageName,
       amount: sessionData.amount,
-      packageName: sessionData.packageName || `${sessionData.coins} 코인`,
       coins: sessionData.coins,
       bonusCoins: sessionData.bonusCoins || 0,
-      returnUrl: sessionData.returnUrl || MAIN_SERVICE_URL
+      impKey: IMP_KEY,
+      returnUrl: MAIN_SERVICE_URL
     });
-
+    
   } catch (error) {
-    console.error('Payment page error:', error);
-    res.status(500).render('error', { 
-      message: '결제 페이지 로딩 중 오류가 발생했습니다.',
+    console.error('Error rendering payment page:', error);
+    res.render('error', { 
+      message: '결제 페이지 로드 중 오류가 발생했습니다.',
       returnUrl: MAIN_SERVICE_URL 
     });
   }
 });
 
-// Payment verification endpoint
+// Payment verification
 app.post('/verify-payment', async (req, res) => {
   try {
-    console.log('Payment verification request:', req.body);
-    
     const { imp_uid, merchant_uid, success } = req.body;
     
-    if (!merchant_uid) {
-      return res.json({ success: false, error: 'Missing merchant_uid' });
-    }
-
+    console.log('Payment verification request:', { imp_uid, merchant_uid, success });
+    
     // Get session data
     const sessionData = paymentSessions.get(merchant_uid);
     
     if (!sessionData) {
-      console.log('Session not found for merchant_uid:', merchant_uid);
-      return res.json({ success: false, error: 'Session not found' });
+      return res.json({ 
+        success: false, 
+        error: '결제 세션을 찾을 수 없습니다.',
+        redirectUrl: MAIN_SERVICE_URL 
+      });
     }
-
-    console.log('Found session data for verification:', sessionData);
-
-    if (success === 'true' || success === true) {
-      // Payment successful
-      console.log('Payment successful, notifying main service');
-      
+    
+    if (success) {
+      // Payment successful - verify with Portone and notify main service
       try {
-        // Notify main service
-        const notificationData = {
-          success: true,
-          sessionId: sessionData.sessionId,
-          merchantUid: merchant_uid,
-          impUid: imp_uid,
-          amount: sessionData.amount,
-          coins: sessionData.coins,
-          bonusCoins: sessionData.bonusCoins || 0,
-          packageId: sessionData.packageId,
-          userId: sessionData.userId
-        };
-
-        console.log('Sending notification to main service:', notificationData);
-
-        const response = await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
-        
-        console.log('Main service response:', response.data);
-        
-        // Clean up session
-        paymentSessions.delete(merchant_uid);
-        paymentSessions.delete(sessionData.sessionId);
-        
-        res.json({ 
-          success: true, 
-          message: '결제가 완료되었습니다.',
-          redirectUrl: sessionData.returnUrl || MAIN_SERVICE_URL
+        // Get access token
+        const tokenResponse = await axios.post('https://api.iamport.kr/users/getToken', {
+          imp_key: IMP_KEY,
+          imp_secret: IMP_SECRET
         });
         
+        const accessToken = tokenResponse.data.response.access_token;
+        
+        // Verify payment
+        const paymentResponse = await axios.get(`https://api.iamport.kr/payments/${imp_uid}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        const paymentData = paymentResponse.data.response;
+        
+        if (paymentData.amount === sessionData.amount && paymentData.status === 'paid') {
+          // Payment verified - notify main service
+          const notificationData = {
+            paymentId: sessionData.paymentId,
+            status: 'completed',
+            externalPaymentId: imp_uid,
+            merchantUid: merchant_uid,
+            amount: paymentData.amount,
+            paidAt: paymentData.paid_at
+          };
+          
+          await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
+          
+          // Clean up session
+          paymentSessions.delete(merchant_uid);
+          paymentSessions.delete(sessionData.sessionId);
+          
+          res.json({ 
+            success: true, 
+            redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=success`
+          });
+          
+        } else {
+          throw new Error('Payment verification failed');
+        }
+        
       } catch (error) {
-        console.error('Error notifying main service:', error);
+        console.error('Payment verification error:', error);
+        
+        // Notify main service of failure
+        const notificationData = {
+          paymentId: sessionData.paymentId,
+          status: 'failed',
+          error: error.message
+        };
+        
+        await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
+        
         res.json({ 
           success: false, 
-          error: '결제 완료 처리 중 오류가 발생했습니다.' 
+          error: '결제 검증에 실패했습니다.',
+          redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=failed`
         });
       }
       
     } else {
-      // Payment failed
-      console.log('Payment failed');
-      
+      // Payment failed or cancelled
       try {
         const notificationData = {
-          success: false,
-          sessionId: sessionData.sessionId,
-          merchantUid: merchant_uid,
-          errorMessage: '결제가 취소되었습니다.'
+          paymentId: sessionData.paymentId,
+          status: 'cancelled',
+          merchantUid: merchant_uid
         };
-
+        
         await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
         
         // Clean up session
