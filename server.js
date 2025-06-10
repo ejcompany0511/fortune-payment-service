@@ -274,4 +274,8 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000); // 1시간마다 정리
 
-app.
+app.listen(PORT, () => {
+  console.log(`Payment service running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Main service URL: ${MAIN_SERVICE_URL}`);
+});
