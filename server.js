@@ -158,13 +158,15 @@ app.get('/payment', (req, res) => {
                 buyer_name: '고객',
                 buyer_tel: '010-1234-5678',
                 buyer_addr: '서울특별시 강남구 삼성동',
-                buyer_postcode: '123-456'
+                buyer_postcode: '123-456',
+                // 모바일 결제 완료 후 직접 리다이렉트 설정
+                m_redirect_url: window.location.origin + '/mobile-payment-complete?sessionId=${sessionId}&merchant_uid=${merchant_uid}'
             }, function (rsp) {
                 payBtn.disabled = false;
                 loading.style.display = 'none';
                 
                 if (rsp.success) {
-                    // 결제 성공 시
+                    // PC 결제 성공 시만 처리 (모바일은 m_redirect_url로 처리됨)
                     fetch('/verify-payment', {
                         method: 'POST',
                         headers: {
@@ -194,23 +196,8 @@ app.get('/payment', (req, res) => {
                     });
                 } else {
                     // 결제 실패 시
-                    fetch('/verify-payment', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            imp_uid: rsp.imp_uid,
-                            merchant_uid: rsp.merchant_uid,
-                            success: false,
-                            error_msg: rsp.error_msg
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        alert('결제가 취소되었습니다: ' + rsp.error_msg);
-                        window.location.href = data.redirectUrl;
-                    });
+                    alert('결제가 취소되었습니다: ' + rsp.error_msg);
+                    window.location.href = 'https://www.everyunse.com/coins?payment=cancelled';
                 }
             });
         }
@@ -219,6 +206,36 @@ app.get('/payment', (req, res) => {
 </html>`;
 
   res.send(html);
+});
+
+// 모바일 결제 완료 처리 (m_redirect_url 콜백)
+app.get('/mobile-payment-complete', async (req, res) => {
+  const { imp_uid, merchant_uid, imp_success, error_msg, sessionId } = req.query;
+  
+  console.log('Mobile payment completion:', {
+    imp_uid, merchant_uid, imp_success, error_msg, sessionId
+  });
+
+  if (imp_success === 'true' && imp_uid && sessionId) {
+    // 결제 성공 - 검증 후 메인 서비스 알림
+    const sessionData = paymentSessions.get(sessionId);
+    
+    if (sessionData) {
+      sessionData.status = 'completed';
+      sessionData.transactionId = imp_uid;
+      
+      // 메인 서비스에 웹훅 전송
+      await notifyMainService(sessionData, 'completed');
+      
+      // 즉시 메인 사이트로 리다이렉트 (중간 화면 없이)
+      res.redirect(`https://www.everyunse.com/coins?payment=success&coins=${sessionData.coins}`);
+    } else {
+      res.redirect('https://www.everyunse.com/coins?payment=error&message=session_not_found');
+    }
+  } else {
+    // 결제 실패
+    res.redirect(`https://www.everyunse.com/coins?payment=error&message=${encodeURIComponent(error_msg || 'payment_failed')}`);
+  }
 });
 
 // 결제 요청 생성 (PC/모바일 자동 감지)
@@ -267,7 +284,7 @@ app.post('/api/create-payment', (req, res) => {
   });
 });
 
-// 아임포트 결제 검증 API
+// 아임포트 결제 검증 API (PC용)
 app.post('/verify-payment', async (req, res) => {
   const { imp_uid, merchant_uid, sessionId, success, error_msg } = req.body;
 
