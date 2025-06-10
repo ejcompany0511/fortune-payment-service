@@ -105,6 +105,11 @@ app.get('/payment', (req, res) => {
         .btn:hover {
             transform: translateY(-2px);
         }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
         .loading {
             display: none;
             color: #666;
@@ -119,18 +124,22 @@ app.get('/payment', (req, res) => {
         <div class="amount">${parseFloat(amount).toLocaleString()}원</div>
         <div class="coins">코인: ${coins}개</div>
         
-        <button class="btn" onclick="requestPay()">결제하기</button>
-        <div class="loading" id="loading">결제 처리 중...</div>
+        <button id="payBtn" class="btn" onclick="requestPay()">결제하기</button>
+        <div id="loading" class="loading">결제 처리 중...</div>
     </div>
 
     <script>
-        const IMP = window.IMP;
-        IMP.init('imp57573124'); // 테스트 가맹점 코드
+        // 아임포트 초기화
+        window.IMP.init('imp57573124'); // 테스트 가맹점 코드
         
         function requestPay() {
-            document.getElementById('loading').style.display = 'block';
+            const payBtn = document.getElementById('payBtn');
+            const loading = document.getElementById('loading');
             
-            IMP.request_pay({
+            payBtn.disabled = true;
+            loading.style.display = 'block';
+            
+            window.IMP.request_pay({
                 pg: 'html5_inicis',
                 pay_method: 'card',
                 merchant_uid: '${merchant_uid}',
@@ -142,7 +151,8 @@ app.get('/payment', (req, res) => {
                 buyer_addr: '서울특별시 강남구 삼성동',
                 buyer_postcode: '123-456'
             }, function (rsp) {
-                document.getElementById('loading').style.display = 'none';
+                payBtn.disabled = false;
+                loading.style.display = 'none';
                 
                 if (rsp.success) {
                     // 결제 성공 시
@@ -195,9 +205,6 @@ app.get('/payment', (req, res) => {
                 }
             });
         }
-        
-        // 페이지 로드 시 자동으로 결제 창 호출 (선택사항)
-        // window.onload = requestPay;
     </script>
 </body>
 </html>`;
