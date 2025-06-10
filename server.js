@@ -57,7 +57,7 @@ app.post('/api/create-payment', (req, res) => {
   });
 
   if (isMobile) {
-    // 모바일 결제 파라미터
+    // 모바일 결제 파라미터 (최신 Smart 결제 시스템)
     const paymentParams = {
       P_INI_PAYMENT: 'CARD',
       P_MID: INICIS_MID,
@@ -69,7 +69,8 @@ app.post('/api/create-payment', (req, res) => {
       P_CHARSET: 'utf8',
       P_SESSIONID: sessionId,
       P_NOTI_URL: `${req.protocol}://${req.get('host')}/api/mobile-payment-complete`,
-      P_NEXT_URL: `${req.protocol}://${req.get('host')}/api/mobile-payment-complete`
+      P_NEXT_URL: `${req.protocol}://${req.get('host')}/api/mobile-payment-complete`,
+      P_RESERVED: 'twotrs_isp=Y&block_isp=Y'
     };
 
     res.json({
@@ -97,24 +98,26 @@ app.post('/api/create-payment', (req, res) => {
         message: '테스트 환경에서 결제가 시뮬레이션됩니다.'
       });
     } else {
-      // 프로덕션 환경에서는 실제 KG Inicis 결제
-      const channelKey = process.env.INICIS_CHANNEL_KEY || 'channel-key-bc5e12b1-11b3-4645-9033-1275c22d95cf';
+      // 프로덕션 환경에서는 최신 KG Inicis PC 결제
+      const pcPaymentParams = {
+        P_MID: INICIS_MID,
+        P_OID: orderId,
+        P_AMT: amount,
+        P_GOODS: `${coins}코인 패키지`,
+        P_UNAME: '고객',
+        P_NEXT_URL: `${req.protocol}://${req.get('host')}/api/pc-payment-complete`,
+        P_NOTI_URL: `${req.protocol}://${req.get('host')}/api/pc-payment-complete`,
+        P_CHARSET: 'utf8',
+        P_INI_PAYMENT: 'CARD',
+        P_SESSIONID: sessionId
+      };
       
       res.json({
         success: true,
         sessionId,
         paymentType: 'pc',
-        channelKey: channelKey,
-        paymentData: {
-          paymentId: orderId,
-          orderName: `${coins}코인 패키지`,
-          amount: amount,
-          currency: 'KRW',
-          channelKey: channelKey,
-          payMethod: 'card',
-          returnUrl: `${req.protocol}://${req.get('host')}/api/pc-payment-complete`,
-          sessionId: sessionId
-        }
+        paymentUrl: 'https://stdpay.inicis.com/inicis/std/payView.jsp',
+        params: pcPaymentParams
       });
     }
   }
@@ -154,12 +157,14 @@ app.post('/api/mobile-payment-complete', async (req, res) => {
 
 // PC 결제 완료 처리
 app.post('/api/pc-payment-complete', async (req, res) => {
-  const { paymentId, sessionId, status, amount } = req.body;
+  const { P_STATUS, P_RMESG1, P_TID, P_AMT, P_MID, P_OID, P_SESSIONID } = req.body;
 
   console.log('PC payment completion received:', {
-    paymentId, sessionId, status, amount
+    P_STATUS, P_RMESG1, P_TID, P_AMT, P_MID, P_OID, P_SESSIONID
   });
 
+  // sessionId가 없으면 P_OID에서 추출
+  const sessionId = P_SESSIONID || extractSessionFromOID(P_OID);
   const sessionData = paymentSessions.get(sessionId);
   
   if (!sessionData) {
@@ -167,19 +172,29 @@ app.post('/api/pc-payment-complete', async (req, res) => {
     return res.redirect(`${MAIN_SERVICE_URL}/coins?payment=error&message=session_not_found`);
   }
 
-  if (status === 'success') {
+  if (P_STATUS === '00') {
+    // 결제 성공
     sessionData.status = 'completed';
-    sessionData.transactionId = paymentId;
+    sessionData.transactionId = P_TID;
     await notifyMainService(sessionData, 'completed');
     
     res.redirect(`${MAIN_SERVICE_URL}/coins?payment=success&coins=${sessionData.coins}`);
   } else {
+    // 결제 실패
     sessionData.status = 'failed';
+    sessionData.errorMessage = P_RMESG1;
     await notifyMainService(sessionData, 'failed');
     
-    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=error&message=payment_failed`);
+    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=error&message=${encodeURIComponent(P_RMESG1)}`);
   }
 });
+
+// OID에서 sessionId 추출 헬퍼 함수
+function extractSessionFromOID(oid) {
+  if (!oid) return null;
+  const parts = oid.split('_');
+  return parts.length >= 3 ? parts[2] : null;
+}
 
 // 메인 서비스에 결제 결과 알림
 async function notifyMainService(sessionData, status) {
