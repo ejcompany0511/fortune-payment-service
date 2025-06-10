@@ -49,34 +49,52 @@
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
-            border: 2px solid #e9ecef;
         }
         
-        .package-title {
-            font-size: 1.3rem;
+        .package-name {
+            font-size: 1.5rem;
             font-weight: bold;
             color: #333;
             margin-bottom: 15px;
         }
         
-        .coin-info {
+        .coin-details {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
         }
         
+        .coin-label {
+            color: #666;
+        }
+        
         .coin-amount {
-            font-size: 1.1rem;
+            font-weight: bold;
             color: #667eea;
+        }
+        
+        .bonus-coins {
+            color: #28a745;
             font-weight: bold;
         }
         
-        .price {
-            font-size: 1.5rem;
+        .total-amount {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .amount-label {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        
+        .amount-value {
+            font-size: 2rem;
             font-weight: bold;
-            color: #333;
-            margin-top: 10px;
         }
         
         .payment-methods {
@@ -84,7 +102,6 @@
         }
         
         .method-title {
-            font-size: 1.1rem;
             font-weight: bold;
             margin-bottom: 15px;
             color: #333;
@@ -94,6 +111,7 @@
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 10px;
+            margin-bottom: 20px;
         }
         
         .method-btn {
@@ -117,69 +135,48 @@
             color: white;
         }
         
-        .pay-button {
-            width: 100%;
-            padding: 18px;
+        .payment-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 15px;
+            padding: 18px 40px;
+            border-radius: 50px;
             font-size: 1.1rem;
             font-weight: bold;
             cursor: pointer;
             transition: transform 0.2s ease;
             margin-bottom: 20px;
+            width: 100%;
         }
         
-        .pay-button:hover {
+        .payment-btn:hover {
             transform: translateY(-2px);
         }
         
-        .pay-button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .security-info {
-            font-size: 0.85rem;
+        .cancel-btn {
             color: #666;
-            line-height: 1.4;
-        }
-        
-        .back-link {
-            color: #667eea;
             text-decoration: none;
             font-size: 0.9rem;
-            margin-top: 15px;
-            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 20px;
+            transition: background 0.3s ease;
+        }
+        
+        .cancel-btn:hover {
+            background: #f8f9fa;
         }
         
         .loading {
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .loading-content {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            text-align: center;
+            margin: 20px 0;
         }
         
         .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
             width: 40px;
             height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
         }
@@ -189,14 +186,17 @@
             100% { transform: rotate(360deg); }
         }
         
-        @media (max-width: 480px) {
-            .payment-container {
-                padding: 25px;
-            }
-            
-            .method-grid {
-                grid-template-columns: 1fr;
-            }
+        .security-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 30px;
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        .security-info p {
+            margin-bottom: 5px;
         }
     </style>
 </head>
@@ -206,88 +206,99 @@
         <div class="subtitle">안전한 결제 시스템</div>
         
         <div class="package-info">
-            <div class="package-title"><%= sessionData.packageName || '코인 패키지' %></div>
-            <div class="coin-info">
-                <span>기본 코인:</span>
-                <span class="coin-amount"><%= sessionData.coins %>개</span>
+            <div class="package-name"><%= packageName %></div>
+            
+            <div class="coin-details">
+                <span class="coin-label">기본 코인:</span>
+                <span class="coin-amount"><%= coins %>개</span>
             </div>
-            <% if (sessionData.bonusCoins && sessionData.bonusCoins > 0) { %>
-            <div class="coin-info">
-                <span>보너스 코인:</span>
-                <span class="coin-amount">+<%= sessionData.bonusCoins %>개</span>
+            
+            <% if (bonusCoins > 0) { %>
+            <div class="coin-details">
+                <span class="coin-label">보너스 코인:</span>
+                <span class="coin-amount bonus-coins">+<%= bonusCoins %>개</span>
             </div>
             <% } %>
-            <div class="price">₩<%= sessionData.amount.toLocaleString() %></div>
+        </div>
+        
+        <div class="total-amount">
+            <div class="amount-label">결제 할인 선택</div>
+            <div class="amount-value">₩<%= amount.toLocaleString() %></div>
         </div>
         
         <div class="payment-methods">
             <div class="method-title">결제 방법 선택</div>
             <div class="method-grid">
-                <div class="method-btn" data-method="card">신용카드</div>
-                <div class="method-btn" data-method="trans">실시간 계좌이체</div>
-                <div class="method-btn" data-method="vbank">가상계좌</div>
-                <div class="method-btn" data-method="phone">휴대폰 결제</div>
+                <button class="method-btn selected" onclick="selectMethod('card')">
+                    💳 신용카드
+                </button>
+                <button class="method-btn" onclick="selectMethod('trans')">
+                    🏦 실시간 계좌이체
+                </button>
+                <button class="method-btn" onclick="selectMethod('vbank')">
+                    🏛️ 가상계좌
+                </button>
+                <button class="method-btn" onclick="selectMethod('phone')">
+                    📱 휴대폰 결제
+                </button>
             </div>
         </div>
         
-        <button class="pay-button" onclick="requestPay()">
+        <button class="payment-btn" onclick="requestPay()">
             안전하게 결제하기
         </button>
         
-        <div class="security-info">
-            🔒 모든 결제는 SSL 암호화로 보호됩니다<br>
-            KG이니시스 안전결제 시스템을 사용합니다
+        <a href="<%= returnUrl %>/coins" class="cancel-btn">취소</a>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>결제 처리 중...</p>
         </div>
         
-        <a href="<%= returnUrl %>" class="back-link">← 돌아가기</a>
-    </div>
-    
-    <div class="loading" id="loading">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <div>결제 처리 중입니다...</div>
+        <div class="security-info">
+            <p>🔒 SSL 보안 결제</p>
+            <p>포트원(아임포트) 결제 대행</p>
+            <p>KG이니시스 안전 결제</p>
         </div>
     </div>
 
     <script>
-        let selectedMethod = 'card';
-        
-        // Payment method selection
-        document.querySelectorAll('.method-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('selected'));
-                this.classList.add('selected');
-                selectedMethod = this.dataset.method;
-            });
-        });
-        
-        // Set default selection
-        document.querySelector('.method-btn[data-method="card"]').classList.add('selected');
-        
         // Initialize IMP
         var IMP = window.IMP;
         IMP.init('<%= impKey %>');
         
+        let selectedMethod = 'card';
+        
+        function selectMethod(method) {
+            selectedMethod = method;
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            event.target.classList.add('selected');
+        }
+        
         function requestPay() {
+            const paymentBtn = document.querySelector('.payment-btn');
             const loading = document.getElementById('loading');
-            loading.style.display = 'flex';
+            
+            paymentBtn.style.display = 'none';
+            loading.style.display = 'block';
             
             IMP.request_pay({
-                pg: 'html5_inicis',
+                pg: 'html5_inicis.INIpayTest',
                 pay_method: selectedMethod,
                 merchant_uid: '<%= merchantUid %>',
-                name: '<%= sessionData.packageName || "코인 패키지" %>',
-                amount: <%= sessionData.amount %>,
-                buyer_email: '<%= sessionData.userEmail || "" %>',
-                buyer_name: '<%= sessionData.userName || "고객" %>',
+                name: '<%= packageName %>',
+                amount: <%= amount %>,
+                buyer_email: '',
+                buyer_name: '',
                 buyer_tel: '',
                 buyer_addr: '',
-                buyer_postcode: ''
+                buyer_postcode: '',
+                m_redirect_url: '/verify-payment'
             }, function(rsp) {
-                loading.style.display = 'none';
-                
-                // Send result to server for verification
-                fetch('/payment/verify', {
+                // 결제 완료 후 검증
+                fetch('/verify-payment', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -295,19 +306,17 @@
                     body: JSON.stringify({
                         imp_uid: rsp.imp_uid,
                         merchant_uid: rsp.merchant_uid,
-                        imp_success: rsp.success
+                        success: rsp.success
                     })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        alert(data.message);
+                        alert('결제가 완료되었습니다!');
                         window.location.href = data.redirectUrl;
                     } else {
-                        alert(data.message);
-                        if (data.redirectUrl) {
-                            window.location.href = data.redirectUrl;
-                        }
+                        alert('결제 실패: ' + data.error);
+                        window.location.href = data.redirectUrl || '<%= returnUrl %>';
                     }
                 })
                 .catch(error => {
