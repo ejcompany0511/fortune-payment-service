@@ -129,10 +129,19 @@ app.get('/payment', (req, res) => {
     </div>
 
     <script>
-        // 아임포트 초기화
-        window.IMP.init('imp57573124'); // 테스트 가맹점 코드
+        // 아임포트 초기화 - IMP 변수 중복 선언 방지
+        if (typeof window.IMP !== 'undefined') {
+            window.IMP.init('imp57573124'); // 테스트 가맹점 코드
+        } else {
+            console.error('IMP library not loaded');
+        }
         
         function requestPay() {
+            if (!window.IMP) {
+                alert('결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+                return;
+            }
+            
             const payBtn = document.getElementById('payBtn');
             const loading = document.getElementById('loading');
             
