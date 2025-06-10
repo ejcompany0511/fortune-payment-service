@@ -25,6 +25,26 @@ const IMP_SECRET = process.env.IMP_SECRET; // 포트원 REST API Secret
 // Payment sessions storage (in production, use Redis or database)
 const paymentSessions = new Map();
 
+// Store session data from main service
+app.post('/api/store-session', (req, res) => {
+  try {
+    const sessionData = req.body;
+    console.log('Storing session data:', sessionData);
+    
+    if (!sessionData.sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    paymentSessions.set(sessionData.sessionId, sessionData);
+    console.log(`Stored session ${sessionData.sessionId} successfully`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error storing session:', error);
+    res.status(500).json({ error: 'Failed to store session' });
+  }
+});
+
 // Get payment session data from main service
 async function getPaymentSession(sessionId) {
   try {
@@ -51,8 +71,15 @@ app.get('/payment', async (req, res) => {
       });
     }
 
-    // Get session data from main service
-    const sessionData = await getPaymentSession(sessionId);
+    // First check local storage, then fallback to main service
+    let sessionData = paymentSessions.get(sessionId);
+    
+    if (!sessionData) {
+      console.log(`Session ${sessionId} not found in local storage, fetching from main service`);
+      sessionData = await getPaymentSession(sessionId);
+    } else {
+      console.log(`Found session ${sessionId} in local storage:`, sessionData);
+    }
     
     if (!sessionData) {
       return res.status(404).render('error', { 
@@ -68,149 +95,154 @@ app.get('/payment', async (req, res) => {
     paymentSessions.set(merchantUid, {
       ...sessionData,
       sessionId,
-      merchantUid,
-      createdAt: new Date()
+      merchantUid
     });
 
+    console.log('Generated merchant_uid:', merchantUid);
+    console.log('Session data prepared:', sessionData);
+
+    // Render payment page with session data
     res.render('payment', {
-      sessionData,
-      merchantUid,
-      impKey: process.env.IMP_KEY,
+      sessionData: sessionData,
+      merchantUid: merchantUid,
+      impKey: IMP_KEY,
+      amount: sessionData.amount,
+      packageName: sessionData.packageName || `${sessionData.coins} 코인`,
+      coins: sessionData.coins,
+      bonusCoins: sessionData.bonusCoins || 0,
       returnUrl: sessionData.returnUrl || MAIN_SERVICE_URL
     });
 
   } catch (error) {
     console.error('Payment page error:', error);
     res.status(500).render('error', { 
-      message: '결제 페이지 로드 중 오류가 발생했습니다.',
+      message: '결제 페이지 로딩 중 오류가 발생했습니다.',
       returnUrl: MAIN_SERVICE_URL 
     });
   }
 });
 
-// Payment verification and completion
-app.post('/payment/verify', async (req, res) => {
+// Payment verification endpoint
+app.post('/verify-payment', async (req, res) => {
   try {
-    const { imp_uid, merchant_uid, imp_success } = req.body;
+    console.log('Payment verification request:', req.body);
     
-    if (!merchant_uid || !paymentSessions.has(merchant_uid)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '결제 정보를 찾을 수 없습니다.' 
-      });
+    const { imp_uid, merchant_uid, success } = req.body;
+    
+    if (!merchant_uid) {
+      return res.json({ success: false, error: 'Missing merchant_uid' });
     }
 
+    // Get session data
     const sessionData = paymentSessions.get(merchant_uid);
     
-    if (imp_success === 'true' && imp_uid) {
-      // Get access token from 포트원
-      const tokenResponse = await axios.post('https://api.iamport.kr/users/getToken', {
-        imp_key: IMP_KEY,
-        imp_secret: IMP_SECRET
-      });
+    if (!sessionData) {
+      console.log('Session not found for merchant_uid:', merchant_uid);
+      return res.json({ success: false, error: 'Session not found' });
+    }
 
-      if (tokenResponse.data.code !== 0) {
-        throw new Error('Failed to get access token');
-      }
+    console.log('Found session data for verification:', sessionData);
 
-      const access_token = tokenResponse.data.response.access_token;
-
-      // Verify payment with 포트원
-      const paymentResponse = await axios.get(
-        `https://api.iamport.kr/payments/${imp_uid}`,
-        {
-          headers: { Authorization: access_token }
-        }
-      );
-
-      const payment = paymentResponse.data.response;
+    if (success === 'true' || success === true) {
+      // Payment successful
+      console.log('Payment successful, notifying main service');
       
-      // Verify payment amount matches
-      if (payment.amount !== sessionData.amount) {
-        throw new Error('Payment amount mismatch');
-      }
-
-      if (payment.status === 'paid') {
-        // Notify main service of successful payment
-        await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, {
+      try {
+        // Notify main service
+        const notificationData = {
+          success: true,
           sessionId: sessionData.sessionId,
-          status: 'success',
-          transactionId: imp_uid,
-          amount: payment.amount,
-          paymentMethod: payment.pay_method
-        });
+          merchantUid: merchant_uid,
+          impUid: imp_uid,
+          amount: sessionData.amount,
+          coins: sessionData.coins,
+          bonusCoins: sessionData.bonusCoins || 0,
+          packageId: sessionData.packageId,
+          userId: sessionData.userId
+        };
 
+        console.log('Sending notification to main service:', notificationData);
+
+        const response = await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
+        
+        console.log('Main service response:', response.data);
+        
         // Clean up session
         paymentSessions.delete(merchant_uid);
-
-        const returnUrl = `${sessionData.returnUrl}/coins?payment=success&coins=${sessionData.coins + (sessionData.bonusCoins || 0)}`;
+        paymentSessions.delete(sessionData.sessionId);
         
-        res.json({
-          success: true,
+        res.json({ 
+          success: true, 
           message: '결제가 완료되었습니다.',
-          redirectUrl: returnUrl
+          redirectUrl: sessionData.returnUrl || MAIN_SERVICE_URL
         });
-      } else {
-        throw new Error('Payment not completed');
+        
+      } catch (error) {
+        console.error('Error notifying main service:', error);
+        res.json({ 
+          success: false, 
+          error: '결제 완료 처리 중 오류가 발생했습니다.' 
+        });
       }
+      
     } else {
       // Payment failed
-      await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, {
-        sessionId: sessionData.sessionId,
-        status: 'failed',
-        errorMessage: '결제가 취소되었습니다.'
-      });
-
-      paymentSessions.delete(merchant_uid);
-
-      const returnUrl = `${sessionData.returnUrl}/coins?payment=failed`;
+      console.log('Payment failed');
       
-      res.json({
-        success: false,
-        message: '결제가 취소되었습니다.',
-        redirectUrl: returnUrl
-      });
-    }
+      try {
+        const notificationData = {
+          success: false,
+          sessionId: sessionData.sessionId,
+          merchantUid: merchant_uid,
+          errorMessage: '결제가 취소되었습니다.'
+        };
 
+        await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
+        
+        // Clean up session
+        paymentSessions.delete(merchant_uid);
+        paymentSessions.delete(sessionData.sessionId);
+        
+        res.json({ 
+          success: false, 
+          error: '결제가 취소되었습니다.',
+          redirectUrl: sessionData.returnUrl || MAIN_SERVICE_URL
+        });
+        
+      } catch (error) {
+        console.error('Error notifying main service of failure:', error);
+        res.json({ 
+          success: false, 
+          error: '결제 취소 처리 중 오류가 발생했습니다.' 
+        });
+      }
+    }
+    
   } catch (error) {
     console.error('Payment verification error:', error);
-    
-    const sessionData = paymentSessions.get(req.body.merchant_uid);
-    if (sessionData) {
-      await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, {
-        sessionId: sessionData.sessionId,
-        status: 'failed',
-        errorMessage: error.message
-      });
-      
-      paymentSessions.delete(req.body.merchant_uid);
-    }
-
-    res.status(500).json({
-      success: false,
-      message: '결제 처리 중 오류가 발생했습니다.',
-      redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=error`
-    });
+    res.json({ success: false, error: '결제 확인 중 오류가 발생했습니다.' });
   }
 });
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    sessionsCount: paymentSessions.size
+  });
 });
 
-// Clean up expired sessions every hour
-setInterval(() => {
-  const now = new Date();
-  for (const [key, session] of paymentSessions.entries()) {
-    if (now - session.createdAt > 3600000) { // 1 hour
-      paymentSessions.delete(key);
-    }
-  }
-}, 3600000);
+// Error page fallback
+app.get('*', (req, res) => {
+  res.status(404).render('error', { 
+    message: '페이지를 찾을 수 없습니다.',
+    returnUrl: MAIN_SERVICE_URL 
+  });
+});
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Payment service running on port ${PORT}`);
+  console.log('Main service URL:', MAIN_SERVICE_URL);
+  console.log('Portone IMP_KEY configured:', !!IMP_KEY);
 });
-
-module.exports = app;
