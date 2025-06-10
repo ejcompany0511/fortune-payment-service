@@ -18,20 +18,23 @@ app.set('view engine', 'ejs');
 app.set('views', './views');
 
 // Environment variables
-const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://your-replit-app.replit.app';
-const IMP_KEY = process.env.IMP_KEY;
-const IMP_SECRET = process.env.IMP_SECRET;
+const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://www.everyunse.com';
+const IMP_KEY = process.env.IMP_KEY; // 포트원 REST API Key
+const IMP_SECRET = process.env.IMP_SECRET; // 포트원 REST API Secret
 
-// Payment sessions storage
+// Payment sessions storage (in production, use Redis or database)
 const paymentSessions = new Map();
 
 // Get payment session data from main service
 async function getPaymentSession(sessionId) {
   try {
+    console.log(`Fetching session data from: ${MAIN_SERVICE_URL}/api/payment/session/${sessionId}`);
     const response = await axios.get(`${MAIN_SERVICE_URL}/api/payment/session/${sessionId}`);
+    console.log('Session data received:', response.data);
     return response.data;
   } catch (error) {
     console.error('Failed to get payment session:', error);
+    console.error('Error details:', error.response?.data || error.message);
     return null;
   }
 }
@@ -48,6 +51,7 @@ app.get('/payment', async (req, res) => {
       });
     }
 
+    // Get session data from main service
     const sessionData = await getPaymentSession(sessionId);
     
     if (!sessionData) {
@@ -57,8 +61,10 @@ app.get('/payment', async (req, res) => {
       });
     }
 
+    // Generate merchant_uid for this payment
     const merchantUid = `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    // Store session with merchant_uid
     paymentSessions.set(merchantUid, {
       ...sessionData,
       sessionId,
@@ -82,7 +88,7 @@ app.get('/payment', async (req, res) => {
   }
 });
 
-// Payment verification
+// Payment verification and completion
 app.post('/payment/verify', async (req, res) => {
   try {
     const { imp_uid, merchant_uid, imp_success } = req.body;
@@ -97,6 +103,7 @@ app.post('/payment/verify', async (req, res) => {
     const sessionData = paymentSessions.get(merchant_uid);
     
     if (imp_success === 'true' && imp_uid) {
+      // Get access token from 포트원
       const tokenResponse = await axios.post('https://api.iamport.kr/users/getToken', {
         imp_key: IMP_KEY,
         imp_secret: IMP_SECRET
@@ -108,6 +115,7 @@ app.post('/payment/verify', async (req, res) => {
 
       const access_token = tokenResponse.data.response.access_token;
 
+      // Verify payment with 포트원
       const paymentResponse = await axios.get(
         `https://api.iamport.kr/payments/${imp_uid}`,
         {
@@ -117,11 +125,13 @@ app.post('/payment/verify', async (req, res) => {
 
       const payment = paymentResponse.data.response;
       
+      // Verify payment amount matches
       if (payment.amount !== sessionData.amount) {
         throw new Error('Payment amount mismatch');
       }
 
       if (payment.status === 'paid') {
+        // Notify main service of successful payment
         await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, {
           sessionId: sessionData.sessionId,
           status: 'success',
@@ -130,6 +140,7 @@ app.post('/payment/verify', async (req, res) => {
           paymentMethod: payment.pay_method
         });
 
+        // Clean up session
         paymentSessions.delete(merchant_uid);
 
         const returnUrl = `${sessionData.returnUrl}/coins?payment=success&coins=${sessionData.coins + (sessionData.bonusCoins || 0)}`;
@@ -143,6 +154,7 @@ app.post('/payment/verify', async (req, res) => {
         throw new Error('Payment not completed');
       }
     } else {
+      // Payment failed
       await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, {
         sessionId: sessionData.sessionId,
         status: 'failed',
@@ -182,14 +194,16 @@ app.post('/payment/verify', async (req, res) => {
   }
 });
 
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Clean up expired sessions every hour
 setInterval(() => {
   const now = new Date();
   for (const [key, session] of paymentSessions.entries()) {
-    if (now - session.createdAt > 3600000) {
+    if (now - session.createdAt > 3600000) { // 1 hour
       paymentSessions.delete(key);
     }
   }
