@@ -31,6 +31,8 @@ app.get('/health', (req, res) => {
 app.get('/payment', (req, res) => {
   const { amount, coins, sessionId, merchant_uid, name } = req.query;
   
+  console.log('Payment page accessed with params:', { amount, coins, sessionId, merchant_uid, name });
+  
   if (!amount || !coins || !sessionId || !merchant_uid) {
     return res.status(400).send('Missing required parameters');
   }
@@ -123,11 +125,24 @@ app.get('/payment', (req, res) => {
             color: #1976d2;
             font-size: 14px;
         }
+        .debug-info {
+            background: #f5f5f5;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            color: #666;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="payment-container">
         <div class="logo">🔮 EveryUnse</div>
+        
+        <div class="debug-info">
+            세션ID: ${sessionId}<br>
+            주문번호: ${merchant_uid}
+        </div>
         
         <div id="mobileNotice" class="mobile-notice" style="display: none;">
             📱 모바일 환경에서 최적화된 결제창이 제공됩니다.
@@ -165,11 +180,10 @@ app.get('/payment', (req, res) => {
             payBtn.disabled = true;
             loading.style.display = 'block';
             
-            // 모바일/PC에 따른 PG 설정
-            const pgConfig = isMobile ? 'html5_inicis.INIpayTest' : 'html5_inicis.INIpayTest';
+            console.log('Starting payment with sessionId: ${sessionId}');
             
             IMP.request_pay({
-                pg: pgConfig,
+                pg: 'html5_inicis.INIpayTest',
                 pay_method: 'card',
                 merchant_uid: '${merchant_uid}',
                 name: '${name || '코인 패키지'}',
@@ -177,9 +191,15 @@ app.get('/payment', (req, res) => {
                 buyer_email: 'customer@example.com',
                 buyer_name: '고객',
                 buyer_tel: '010-0000-0000',
+                // 세션ID를 custom_data로 전달
+                custom_data: {
+                    sessionId: '${sessionId}'
+                },
                 // 모바일 최적화 옵션
-                m_redirect_url: window.location.origin + '/verify-payment-mobile'
+                m_redirect_url: window.location.origin + '/verify-payment-mobile?sessionId=${sessionId}'
             }, function(rsp) {
+                console.log('Payment response:', rsp);
+                
                 if (rsp.success) {
                     // 결제 성공 시 검증 요청
                     fetch('/verify-payment', {
@@ -190,6 +210,7 @@ app.get('/payment', (req, res) => {
                         body: JSON.stringify({
                             imp_uid: rsp.imp_uid,
                             merchant_uid: rsp.merchant_uid,
+                            sessionId: '${sessionId}',
                             success: true
                         })
                     })
@@ -218,6 +239,7 @@ app.get('/payment', (req, res) => {
                         body: JSON.stringify({
                             imp_uid: rsp.imp_uid,
                             merchant_uid: rsp.merchant_uid,
+                            sessionId: '${sessionId}',
                             success: false,
                             error_msg: rsp.error_msg
                         })
@@ -241,30 +263,34 @@ app.get('/payment', (req, res) => {
 app.post('/api/create-payment', (req, res) => {
   const { amount, coins, userId, packageId } = req.body;
   
+  console.log('Create payment request:', { amount, coins, userId, packageId });
+  
   if (!amount || !coins) {
     return res.status(400).json({ error: 'Amount and coins are required' });
   }
 
-  // User-Agent로 모바일/PC 감지
-  const userAgent = req.headers['user-agent'] || '';
-  const isMobile = /Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-
   // 세션 ID 생성
   const sessionId = crypto.randomBytes(16).toString('hex');
   const timestamp = new Date().toISOString().replace(/[:\-]/g, '').slice(0, 14);
-  const orderId = `ORDER_${timestamp}_${sessionId.slice(0, 8)}`;
+  const orderId = `ORDER_${timestamp}_${sessionId}`;
+
+  console.log('Generated sessionId:', sessionId, 'orderId:', orderId);
 
   // 결제 세션 정보 저장
-  paymentSessions.set(sessionId, {
+  const sessionData = {
     amount,
     coins,
     userId,
     packageId,
     orderId,
-    paymentType: 'iamport', // 모든 결제를 아임포트로 통합
+    sessionId, // 명시적으로 sessionId 저장
+    paymentType: 'iamport',
     status: 'pending',
     createdAt: new Date()
-  });
+  };
+  
+  paymentSessions.set(sessionId, sessionData);
+  console.log('Saved session:', sessionId, sessionData);
 
   // 테스트 환경에서는 시뮬레이션 모드로 전환
   const isTestMode = process.env.NODE_ENV !== 'production';
@@ -287,7 +313,7 @@ app.post('/api/create-payment', (req, res) => {
     res.json({
       success: true,
       sessionId,
-      paymentType: 'pc', // PC로 통일 (실제로는 아임포트에서 모바일 자동 최적화)
+      paymentType: 'pc',
       useIamport: true,
       paymentData: {
         merchant_uid: orderId,
@@ -303,10 +329,10 @@ app.post('/api/create-payment', (req, res) => {
 
 // 아임포트 결제 검증 API
 app.post('/verify-payment', async (req, res) => {
-  const { imp_uid, merchant_uid, success, error_msg } = req.body;
+  const { imp_uid, merchant_uid, sessionId, success, error_msg } = req.body;
 
-  console.log('Iamport payment verification received:', {
-    imp_uid, merchant_uid, success, error_msg
+  console.log('Payment verification received:', {
+    imp_uid, merchant_uid, sessionId, success, error_msg
   });
 
   if (!success) {
@@ -317,11 +343,19 @@ app.post('/verify-payment', async (req, res) => {
     });
   }
 
-  // merchant_uid에서 sessionId 추출
-  const sessionId = extractSessionFromOID(merchant_uid);
-  const sessionData = paymentSessions.get(sessionId);
+  // sessionId를 직접 사용하거나 merchant_uid에서 추출
+  let finalSessionId = sessionId;
+  if (!finalSessionId && merchant_uid) {
+    finalSessionId = extractSessionFromOID(merchant_uid);
+  }
+  
+  console.log('Looking for sessionId:', finalSessionId);
+  console.log('Available sessions:', Array.from(paymentSessions.keys()));
+  
+  const sessionData = paymentSessions.get(finalSessionId);
 
   if (!sessionData) {
+    console.error('Session not found for sessionId:', finalSessionId);
     return res.json({
       success: false,
       error: '세션을 찾을 수 없습니다',
@@ -342,12 +376,18 @@ app.post('/verify-payment', async (req, res) => {
 
 // 모바일 리다이렉트 처리
 app.get('/verify-payment-mobile', async (req, res) => {
-  const { imp_uid, merchant_uid, imp_success } = req.query;
+  const { imp_uid, merchant_uid, imp_success, sessionId } = req.query;
+  
+  console.log('Mobile verification received:', { imp_uid, merchant_uid, imp_success, sessionId });
   
   if (imp_success === 'true') {
     // 결제 성공
-    const sessionId = extractSessionFromOID(merchant_uid);
-    const sessionData = paymentSessions.get(sessionId);
+    let finalSessionId = sessionId;
+    if (!finalSessionId && merchant_uid) {
+      finalSessionId = extractSessionFromOID(merchant_uid);
+    }
+    
+    const sessionData = paymentSessions.get(finalSessionId);
     
     if (sessionData) {
       sessionData.status = 'completed';
@@ -368,15 +408,18 @@ app.get('/verify-payment-mobile', async (req, res) => {
 function extractSessionFromOID(oid) {
   if (!oid) return null;
   const parts = oid.split('_');
-  return parts.length >= 3 ? parts[2] : null;
+  // ORDER_timestamp_sessionId 형식에서 sessionId 추출
+  return parts.length >= 3 ? parts.slice(2).join('_') : null;
 }
 
 // 메인 서비스에 결제 결과 알림
 async function notifyMainService(sessionData, status) {
   try {
+    console.log('Notifying main service:', sessionData, status);
+    
     const webhookUrl = `${MAIN_SERVICE_URL}/api/payment-webhook`;
     const webhookData = {
-      sessionId: sessionData.sessionId || crypto.randomBytes(16).toString('hex'),
+      sessionId: sessionData.sessionId,
       userId: sessionData.userId,
       packageId: sessionData.packageId,
       amount: sessionData.amount,
