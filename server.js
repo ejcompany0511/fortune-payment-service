@@ -1,253 +1,277 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
+const bodyParser = require('body-parser');
+const crypto = require('crypto');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
-
-// Set EJS as template engine
-app.set('view engine', 'ejs');
-app.set('views', './views');
-
-// Environment variables
-const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://www.everyunse.com';
-const IMP_KEY = process.env.IMP_KEY; // 포트원 REST API Key
-const IMP_SECRET = process.env.IMP_SECRET; // 포트원 REST API Secret
-
-// Payment sessions storage (in production, use Redis or database)
+// 메모리 저장소 (간단한 세션 관리용)
 const paymentSessions = new Map();
 
-// Store session data from main service
-app.post('/api/store-session', (req, res) => {
-  try {
-    const sessionData = req.body;
-    console.log('Storing session data:', sessionData);
+app.use(cors());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+// KG Inicis 설정
+const INICIS_MID = process.env.INICIS_MID || 'INIpayTest';
+const INICIS_SIGNKEY = process.env.INICIS_SIGNKEY || 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://www.everyunse.com';
+
+// 결제 요청 생성 (PC/모바일 자동 감지)
+app.post('/api/create-payment', (req, res) => {
+  const { amount, coins, userId, paymentType } = req.body;
+  
+  if (!amount || !coins) {
+    return res.status(400).json({ error: 'Amount and coins are required' });
+  }
+
+  // User-Agent로 모바일/PC 감지 또는 명시적 paymentType 사용
+  const userAgent = req.headers['user-agent'] || '';
+  const isMobile = paymentType === 'mobile' || 
+    /Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+
+  // 세션 ID 생성
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  const timestamp = new Date().toISOString().replace(/[:\-]/g, '').slice(0, 14);
+  const orderId = `ORDER_${timestamp}_${sessionId.slice(0, 8)}`;
+
+  // 결제 세션 정보 저장
+  paymentSessions.set(sessionId, {
+    amount,
+    coins,
+    userId,
+    orderId,
+    paymentType: isMobile ? 'mobile' : 'pc',
+    status: 'pending',
+    createdAt: new Date()
+  });
+
+  if (isMobile) {
+    // 모바일 결제 파라미터
+    const paymentParams = {
+      P_NEXT_URL: `${req.protocol}://${req.get('host')}/api/mobile-payment-complete`,
+      P_NOTI_URL: `${req.protocol}://${req.get('host')}/api/mobile-payment-noti`,
+      P_RETURN_URL: `${MAIN_SERVICE_URL}/coins?payment=success`,
+      P_CANCEL_URL: `${MAIN_SERVICE_URL}/coins?payment=cancelled`,
+      P_MID: INICIS_MID,
+      P_OID: orderId,
+      P_AMT: amount,
+      P_UNAME: '고객',
+      P_GOODS: `${coins}코인 패키지`,
+      P_MOBILE: 'YES',
+      P_CHARSET: 'utf8',
+      P_SESSIONID: sessionId
+    };
+
+    res.json({
+      success: true,
+      sessionId,
+      paymentType: 'mobile',
+      paymentUrl: 'https://mobile.inicis.com/smart/payment/',
+      params: paymentParams
+    });
+  } else {
+    // PC 결제 파라미터 (channelKey 방식)
+    const channelKey = process.env.INICIS_CHANNEL_KEY || 'channel-key-bc5e12b1-11b3-4645-9033-1275c22d95cf';
     
-    if (!sessionData.sessionId) {
-      return res.status(400).json({ error: 'Session ID is required' });
-    }
-    
-    paymentSessions.set(sessionData.sessionId, sessionData);
-    console.log(`Stored session ${sessionData.sessionId} successfully`);
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error storing session:', error);
-    res.status(500).json({ error: 'Failed to store session' });
+    res.json({
+      success: true,
+      sessionId,
+      paymentType: 'pc',
+      channelKey: channelKey,
+      paymentData: {
+        paymentId: orderId,
+        orderName: `${coins}코인 패키지`,
+        amount: amount,
+        currency: 'KRW',
+        channelKey: channelKey,
+        payMethod: 'card',
+        returnUrl: `${req.protocol}://${req.get('host')}/api/pc-payment-complete`,
+        sessionId: sessionId
+      }
+    });
   }
 });
 
-// Get payment session data from main service
-async function getPaymentSession(sessionId) {
+// KG Inicis 결제 완료 처리
+app.post('/api/mobile-payment-complete', (req, res) => {
+  const { P_STATUS, P_RMESG1, P_TID, P_AMT, P_MID, P_OID, P_SESSIONID } = req.body;
+
+  console.log('Payment completion received:', {
+    P_STATUS,
+    P_RMESG1,
+    P_TID,
+    P_AMT,
+    P_MID,
+    P_OID,
+    P_SESSIONID
+  });
+
+  const sessionData = paymentSessions.get(P_SESSIONID);
+  
+  if (!sessionData) {
+    console.error('Session not found:', P_SESSIONID);
+    return res.redirect(`${MAIN_SERVICE_URL}/coins?payment=error&message=session_not_found`);
+  }
+
+  if (P_STATUS === '00') {
+    // 결제 성공
+    sessionData.status = 'completed';
+    sessionData.transactionId = P_TID;
+    sessionData.completedAt = new Date();
+    
+    // 메인 서비스로 결제 완료 알림
+    notifyMainService(sessionData, 'completed');
+    
+    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=success&coins=${sessionData.coins}&session=${P_SESSIONID}`);
+  } else {
+    // 결제 실패
+    sessionData.status = 'failed';
+    sessionData.errorMessage = P_RMESG1;
+    
+    notifyMainService(sessionData, 'failed');
+    
+    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=failed&message=${encodeURIComponent(P_RMESG1)}`);
+  }
+});
+
+// KG Inicis 알림 처리 (백그라운드)
+app.post('/api/mobile-payment-noti', (req, res) => {
+  const { P_STATUS, P_RMESG1, P_TID, P_AMT, P_MID, P_OID, P_SESSIONID } = req.body;
+
+  console.log('Payment notification received:', {
+    P_STATUS,
+    P_RMESG1,
+    P_TID,
+    P_AMT,
+    P_MID,
+    P_OID,
+    P_SESSIONID
+  });
+
+  const sessionData = paymentSessions.get(P_SESSIONID);
+  
+  if (sessionData && P_STATUS === '00') {
+    sessionData.status = 'completed';
+    sessionData.transactionId = P_TID;
+    sessionData.completedAt = new Date();
+    
+    // 메인 서비스로 결제 완료 알림
+    notifyMainService(sessionData, 'completed');
+  }
+
+  res.send('OK');
+});
+
+// PC 결제 완료 처리 (channelKey 방식)
+app.post('/api/pc-payment-complete', (req, res) => {
+  const { success, paymentId, txId, amount, sessionId } = req.body;
+
+  console.log('PC Payment completion received:', {
+    success,
+    paymentId,
+    txId,
+    amount,
+    sessionId
+  });
+
+  const sessionData = paymentSessions.get(sessionId);
+  
+  if (!sessionData) {
+    console.error('Session not found:', sessionId);
+    return res.redirect(`${MAIN_SERVICE_URL}/coins?payment=error&message=session_not_found`);
+  }
+
+  if (success === 'true' || success === true) {
+    // 결제 성공
+    sessionData.status = 'completed';
+    sessionData.transactionId = txId;
+    sessionData.completedAt = new Date();
+    
+    // 메인 서비스로 결제 완료 알림
+    notifyMainService(sessionData, 'completed');
+    
+    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=success&coins=${sessionData.coins}&session=${sessionId}`);
+  } else {
+    // 결제 실패
+    sessionData.status = 'failed';
+    sessionData.errorMessage = 'PC payment failed';
+    
+    notifyMainService(sessionData, 'failed');
+    
+    res.redirect(`${MAIN_SERVICE_URL}/coins?payment=failed&message=payment_failed`);
+  }
+});
+
+// 결제 상태 조회
+app.get('/api/payment-status/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const sessionData = paymentSessions.get(sessionId);
+  
+  if (!sessionData) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  res.json({
+    sessionId,
+    status: sessionData.status,
+    amount: sessionData.amount,
+    coins: sessionData.coins,
+    transactionId: sessionData.transactionId,
+    createdAt: sessionData.createdAt,
+    completedAt: sessionData.completedAt
+  });
+});
+
+// 메인 서비스로 결제 완료 알림
+async function notifyMainService(sessionData, status) {
   try {
-    console.log('Getting session for ID:', sessionId);
-    
-    // First check local storage
-    if (paymentSessions.has(sessionId)) {
-      console.log('Found session in local storage');
-      return paymentSessions.get(sessionId);
+    const notificationData = {
+      sessionId: sessionData.sessionId,
+      userId: sessionData.userId,
+      amount: sessionData.amount,
+      coins: sessionData.coins,
+      status: status,
+      transactionId: sessionData.transactionId,
+      completedAt: sessionData.completedAt
+    };
+
+    // 메인 서비스의 웹훅 엔드포인트로 알림 전송
+    const response = await fetch(`${MAIN_SERVICE_URL}/api/payment-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.WEBHOOK_SECRET || 'default-secret'}`
+      },
+      body: JSON.stringify(notificationData)
+    });
+
+    if (response.ok) {
+      console.log('Payment notification sent to main service successfully');
+    } else {
+      console.error('Failed to notify main service:', response.status);
     }
-    
-    // Fallback: get from main service if not found locally
-    console.log('Session not found locally, fetching from main service...');
-    const response = await axios.get(`${MAIN_SERVICE_URL}/api/payment/session/${sessionId}`);
-    return response.data;
-    
   } catch (error) {
-    console.error('Error getting payment session:', error);
-    return null;
+    console.error('Error notifying main service:', error);
   }
 }
 
-// Payment page
-app.get('/payment', async (req, res) => {
-  try {
-    const sessionId = req.query.session;
-    
-    if (!sessionId) {
-      return res.render('error', { 
-        message: '결제 세션 ID가 필요합니다.',
-        returnUrl: MAIN_SERVICE_URL 
-      });
-    }
-    
-    const sessionData = await getPaymentSession(sessionId);
-    
-    if (!sessionData) {
-      return res.render('error', { 
-        message: '결제 세션을 찾을 수 없습니다.',
-        returnUrl: MAIN_SERVICE_URL 
-      });
-    }
-    
-    const merchantUid = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    
-    // Store merchant_uid mapping for verification
-    paymentSessions.set(merchantUid, sessionData);
-    
-    res.render('payment', {
-      merchantUid,
-      packageName: sessionData.packageName,
-      amount: sessionData.amount,
-      coins: sessionData.coins,
-      bonusCoins: sessionData.bonusCoins || 0,
-      impKey: IMP_KEY,
-      returnUrl: MAIN_SERVICE_URL
-    });
-    
-  } catch (error) {
-    console.error('Error rendering payment page:', error);
-    res.render('error', { 
-      message: '결제 페이지 로드 중 오류가 발생했습니다.',
-      returnUrl: MAIN_SERVICE_URL 
-    });
-  }
-});
-
-// Payment verification
-app.post('/verify-payment', async (req, res) => {
-  try {
-    const { imp_uid, merchant_uid, success } = req.body;
-    
-    console.log('Payment verification request:', { imp_uid, merchant_uid, success });
-    
-    // Get session data
-    const sessionData = paymentSessions.get(merchant_uid);
-    
-    if (!sessionData) {
-      return res.json({ 
-        success: false, 
-        error: '결제 세션을 찾을 수 없습니다.',
-        redirectUrl: MAIN_SERVICE_URL 
-      });
-    }
-    
-    if (success) {
-      // Payment successful - verify with Portone and notify main service
-      try {
-        // Get access token
-        const tokenResponse = await axios.post('https://api.iamport.kr/users/getToken', {
-          imp_key: IMP_KEY,
-          imp_secret: IMP_SECRET
-        });
-        
-        const accessToken = tokenResponse.data.response.access_token;
-        
-        // Verify payment
-        const paymentResponse = await axios.get(`https://api.iamport.kr/payments/${imp_uid}`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        
-        const paymentData = paymentResponse.data.response;
-        
-        if (paymentData.amount === sessionData.amount && paymentData.status === 'paid') {
-          // Payment verified - notify main service
-          const notificationData = {
-            paymentId: sessionData.paymentId,
-            status: 'completed',
-            externalPaymentId: imp_uid,
-            merchantUid: merchant_uid,
-            amount: paymentData.amount,
-            paidAt: paymentData.paid_at
-          };
-          
-          await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
-          
-          // Clean up session
-          paymentSessions.delete(merchant_uid);
-          paymentSessions.delete(sessionData.sessionId);
-          
-          res.json({ 
-            success: true, 
-            redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=success`
-          });
-          
-        } else {
-          throw new Error('Payment verification failed');
-        }
-        
-      } catch (error) {
-        console.error('Payment verification error:', error);
-        
-        // Notify main service of failure
-        const notificationData = {
-          paymentId: sessionData.paymentId,
-          status: 'failed',
-          error: error.message
-        };
-        
-        await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
-        
-        res.json({ 
-          success: false, 
-          error: '결제 검증에 실패했습니다.',
-          redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=failed`
-        });
-      }
-      
-    } else {
-      // Payment failed or cancelled
-      try {
-        const notificationData = {
-          paymentId: sessionData.paymentId,
-          status: 'cancelled',
-          merchantUid: merchant_uid
-        };
-        
-        await axios.post(`${MAIN_SERVICE_URL}/api/payment/complete`, notificationData);
-        
-        // Clean up session
-        paymentSessions.delete(merchant_uid);
-        paymentSessions.delete(sessionData.sessionId);
-        
-        res.json({ 
-          success: false, 
-          error: '결제가 취소되었습니다.',
-          redirectUrl: sessionData.returnUrl || MAIN_SERVICE_URL
-        });
-        
-      } catch (error) {
-        console.error('Error notifying main service of failure:', error);
-        res.json({ 
-          success: false, 
-          error: '결제 취소 처리 중 오류가 발생했습니다.' 
-        });
-      }
-    }
-    
-  } catch (error) {
-    console.error('Payment verification error:', error);
-    res.json({ success: false, error: '결제 확인 중 오류가 발생했습니다.' });
-  }
-});
-
-// Health check endpoint
+// 헬스 체크
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    sessionsCount: paymentSessions.size
-  });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// Error page fallback
-app.get('*', (req, res) => {
-  res.status(404).render('error', { 
-    message: '페이지를 찾을 수 없습니다.',
-    returnUrl: MAIN_SERVICE_URL 
-  });
-});
+// 세션 정리 (24시간 후 자동 삭제)
+setInterval(() => {
+  const now = new Date();
+  for (const [sessionId, sessionData] of paymentSessions.entries()) {
+    const sessionAge = now - sessionData.createdAt;
+    if (sessionAge > 24 * 60 * 60 * 1000) { // 24시간
+      paymentSessions.delete(sessionId);
+      console.log(`Deleted expired session: ${sessionId}`);
+    }
+  }
+}, 60 * 60 * 1000); // 1시간마다 정리
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Payment service running on port ${PORT}`);
-  console.log('Main service URL:', MAIN_SERVICE_URL);
-  console.log('Portone IMP_KEY configured:', !!IMP_KEY);
-});
+app.
