@@ -19,7 +19,7 @@ app.use(bodyParser.json());
 // KG Inicis 설정
 const INICIS_MID = process.env.INICIS_MID || 'INIpayTest';
 const INICIS_SIGNKEY = process.env.INICIS_SIGNKEY || 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
-const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://www.everyunse.com';
+const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
 
 // 헬스체크 엔드포인트
@@ -190,7 +190,7 @@ app.get('/payment', (req, res) => {
                     .catch(error => {
                         console.error('Error:', error);
                         alert('결제 처리 중 오류가 발생했습니다.');
-                        window.location.href = '${MAIN_SERVICE_URL}/coins?payment=error';
+                        window.location.href = 'https://www.everyunse.com/coins?payment=error';
                     });
                 } else {
                     // 결제 실패 시
@@ -279,7 +279,7 @@ app.post('/verify-payment', async (req, res) => {
     return res.json({
       success: false,
       error: error_msg || '결제 실패',
-      redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=error&message=payment_cancelled`
+      redirectUrl: `https://www.everyunse.com/coins?payment=error&message=payment_cancelled`
     });
   }
 
@@ -297,7 +297,7 @@ app.post('/verify-payment', async (req, res) => {
     return res.json({
       success: false,
       error: 'Session not found',
-      redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=error&message=session_not_found`
+      redirectUrl: `https://www.everyunse.com/coins?payment=error&message=session_not_found`
     });
   }
 
@@ -310,7 +310,7 @@ app.post('/verify-payment', async (req, res) => {
   
   res.json({
     success: true,
-    redirectUrl: `${MAIN_SERVICE_URL}/coins?payment=success&coins=${sessionData.coins}`
+    redirectUrl: `https://www.everyunse.com/coins?payment=success&coins=${sessionData.coins}`
   });
 });
 
