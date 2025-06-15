@@ -44,8 +44,6 @@ async function getCoinPackages() {
   }
 }
 
-
-
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
@@ -54,24 +52,35 @@ app.get('/', async (req, res) => {
     
     // URL 파라미터로 받은 데이터를 세션에 저장
     let sessionData = null;
-    if (sessionId && userId && packageId) {
-      sessionData = {
-        userId: userId,
-        packageId: parseInt(packageId),
-        amount: parseFloat(amount),
-        coins: parseInt(coins),
-        bonusCoins: parseInt(bonusCoins) || 0,
-        returnUrl: returnUrl,
-        timestamp: Date.now()
-      };
+    if (sessionId && userId) {
+      // packageId가 없는 경우 - 패키지 선택을 외부에서 하는 경우
+      if (!packageId) {
+        sessionData = {
+          userId: userId,
+          packageId: null, // 나중에 패키지 선택 시 업데이트
+          returnUrl: returnUrl,
+          timestamp: Date.now()
+        };
+      } else {
+        // packageId가 있는 경우 - 기존 로직
+        sessionData = {
+          userId: userId,
+          packageId: parseInt(packageId),
+          amount: parseFloat(amount),
+          coins: parseInt(coins),
+          bonusCoins: parseInt(bonusCoins) || 0,
+          returnUrl: returnUrl,
+          timestamp: Date.now()
+        };
+      }
       
       paymentSessions.set(sessionId, sessionData);
       console.log('Created session data from URL params:', sessionData);
       console.log('All stored sessions:', Array.from(paymentSessions.keys()));
     } else {
-      console.log('Missing required URL parameters:', { sessionId, userId, packageId, amount, coins });
+      console.log('Missing required URL parameters (sessionId, userId):', { sessionId, userId, packageId, amount, coins });
     }
-
+    
     const html = `
 <!DOCTYPE html>
 <html lang="ko">
@@ -101,6 +110,7 @@ app.get('/', async (req, res) => {
             background: white;
         }
 
+        /* Header */
         .header {
             position: sticky;
             top: 0;
@@ -154,10 +164,12 @@ app.get('/', async (req, res) => {
             font-size: 14px;
         }
 
+        /* Main Content */
         .main {
             padding-bottom: 80px;
         }
 
+        /* Hero Section */
         .hero {
             padding: 16px;
         }
@@ -195,6 +207,15 @@ app.get('/', async (req, res) => {
             opacity: 0.9;
         }
 
+        .hero-decoration {
+            position: absolute;
+            bottom: -20px;
+            right: -20px;
+            font-size: 80px;
+            opacity: 0.1;
+        }
+
+        /* Packages Section */
         .packages-section {
             padding: 0 16px 16px;
         }
@@ -336,6 +357,7 @@ app.get('/', async (req, res) => {
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <header class="header">
             <div class="header-content">
                 <div class="header-left">
@@ -357,15 +379,19 @@ app.get('/', async (req, res) => {
             </div>
         </header>
 
+        <!-- Main Content -->
         <main class="main">
+            <!-- Hero Section -->
             <section class="hero">
                 <div class="hero-card">
                     <div class="hero-icon">💰</div>
                     <h2 class="hero-title">엽전 충전하기</h2>
                     <p class="hero-description">더 많은 운세를 확인하려면 엽전이 필요해요</p>
+                    <div class="hero-decoration">💰</div>
                 </div>
             </section>
 
+            <!-- Packages Section -->
             <section class="packages-section">
                 <h2 class="section-title">엽전 패키지</h2>
                 <div class="packages-grid" id="packagesGrid">
@@ -374,10 +400,12 @@ app.get('/', async (req, res) => {
             </section>
         </main>
 
+        <!-- Purchase Button -->
         <button class="purchase-btn" id="purchaseBtn" onclick="handlePurchase()">
             구매하기
         </button>
 
+        <!-- Notification -->
         <div class="notification" id="notification">
             <span id="notificationText"></span>
         </div>
@@ -387,9 +415,8 @@ app.get('/', async (req, res) => {
         let selectedPackage = null;
         const packages = ${JSON.stringify(packages)};
         const sessionData = ${JSON.stringify(sessionData)};
-        
-        console.log('Session data:', sessionData);
 
+        // 패키지 렌더링
         function renderPackages() {
             const grid = document.getElementById('packagesGrid');
             grid.innerHTML = packages.map((pkg, index) => {
@@ -407,35 +434,42 @@ app.get('/', async (req, res) => {
             }).join('');
         }
 
+        // 패키지 선택
         function selectPackage(packageId) {
             selectedPackage = packages.find(p => p.id === packageId);
             
+            // 모든 카드에서 selected 클래스 제거
             document.querySelectorAll('.package-card').forEach(card => {
                 card.classList.remove('selected');
             });
             
+            // 선택된 카드에 selected 클래스 추가
             event.currentTarget.classList.add('selected');
             
+            // 구매 버튼 표시
             const purchaseBtn = document.getElementById('purchaseBtn');
             purchaseBtn.classList.add('show');
             purchaseBtn.textContent = \`\${selectedPackage.name} 구매하기 (\${Math.floor(selectedPackage.price).toLocaleString()}원)\`;
         }
 
+        // 구매 처리
         async function handlePurchase() {
             if (!selectedPackage) {
                 showNotification('패키지를 선택해주세요');
                 return;
             }
 
+            if (!sessionData || !sessionData.userId) {
+                showNotification('세션 정보가 없습니다. 다시 시도해주세요.');
+                return;
+            }
+
             showNotification('결제를 준비하고 있습니다...');
 
             try {
-                // URL에서 sessionId 가져오기 (메인 서버에서 전달된 값)
-                const urlParams = new URLSearchParams(window.location.search);
-                const sessionId = urlParams.get('sessionId') || 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                const sessionId = new URLSearchParams(window.location.search).get('sessionId');
                 const merchant_uid = 'ORDER_' + Date.now() + Math.random().toString(36).substr(2, 5);
                 
-                console.log('Using sessionId from URL:', sessionId);
                 console.log('Session data available:', sessionData);
                 
                 // 세션에 패키지 정보 업데이트 (사용자가 다른 패키지를 선택했을 수 있음)
@@ -465,16 +499,19 @@ app.get('/', async (req, res) => {
             }
         }
 
+        // returnUrl 가져오기
         function getReturnUrl() {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get('returnUrl') || 'https://everyunse.com';
         }
 
+        // 뒤로 가기
         function goBack() {
             const returnUrl = getReturnUrl();
             window.location.href = returnUrl;
         }
 
+        // 알림 표시
         function showNotification(message) {
             const notification = document.getElementById('notification');
             notification.textContent = message;
@@ -485,10 +522,12 @@ app.get('/', async (req, res) => {
             }, 3000);
         }
 
+        // Iamport 초기화
         if (window.IMP) {
-            window.IMP.init('imp57573124');
+            window.IMP.init('imp57573124'); // 테스트 가맹점 코드
         }
 
+        // Iamport를 통한 KG Inicis 결제
         function initializePayment(packageData, sessionId, merchant_uid) {
             if (!window.IMP) {
                 showNotification('결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
@@ -509,6 +548,7 @@ app.get('/', async (req, res) => {
                 m_redirect_url: window.location.origin + '/payment/complete?sessionId=' + sessionId + '&returnUrl=' + encodeURIComponent(getReturnUrl())
             }, function (rsp) {
                 if (rsp.success) {
+                    // PC 결제 성공 시 처리
                     fetch('/verify-payment', {
                         method: 'POST',
                         headers: {
@@ -528,22 +568,68 @@ app.get('/', async (req, res) => {
                             setTimeout(() => {
                                 const returnUrl = getReturnUrl();
                                 window.location.href = returnUrl;
-                            }, 1500);
+                            }, 1000);
                         } else {
-                            showNotification('결제 검증 실패');
+                            showNotification('결제 검증에 실패했습니다: ' + data.error);
                         }
                     })
                     .catch(error => {
-                        console.error('Verification error:', error);
-                        showNotification('결제 검증 중 오류 발생');
+                        console.error('Error:', error);
+                        showNotification('결제 처리 중 오류가 발생했습니다.');
                     });
                 } else {
-                    showNotification('결제 실패: ' + rsp.error_msg);
+                    showNotification('결제가 취소되었습니다: ' + rsp.error_msg);
                 }
             });
         }
 
-        document.addEventListener('DOMContentLoaded', renderPackages);
+
+
+        // 뒤로 가기
+        function goBack() {
+            // URL 파라미터에서 returnUrl 가져오기
+            const urlParams = new URLSearchParams(window.location.search);
+            const returnUrl = urlParams.get('returnUrl');
+            
+            if (returnUrl) {
+                // 전달받은 URL로 돌아가기
+                window.location.href = decodeURIComponent(returnUrl);
+            } else {
+                // 기본값: 메인 페이지로 돌아가기
+                window.location.href = 'https://everyunse.replit.app/';
+            }
+        }
+
+        // 결제 결과 메시지 리스너
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'payment_success') {
+                showNotification('결제가 완료되었습니다!');
+                setTimeout(() => {
+                    window.close();
+                }, 2000);
+            } else if (event.data.type === 'payment_fail') {
+                showNotification('결제가 실패했습니다.');
+            } else if (event.data.type === 'payment_close') {
+                showNotification('결제가 취소되었습니다.');
+            }
+        });
+
+        // 알림 표시
+        function showNotification(message) {
+            const notification = document.getElementById('notification');
+            const text = document.getElementById('notificationText');
+            text.textContent = message;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            renderPackages();
+        });
     </script>
 </body>
 </html>
@@ -551,7 +637,7 @@ app.get('/', async (req, res) => {
     
     res.send(html);
   } catch (error) {
-    console.error('Error loading coin shop:', error);
+    console.error('Error rendering main page:', error);
     res.status(500).send('서버 오류가 발생했습니다.');
   }
 });
@@ -580,133 +666,647 @@ app.post('/api/update-session', (req, res) => {
   }
 });
 
-// 결제 검증 엔드포인트
+// 기존 아임포트 결제 페이지
+app.get('/payment', (req, res) => {
+  const { amount, coins, sessionId, merchant_uid, name } = req.query;
+  
+  if (!amount || !coins || !sessionId || !merchant_uid) {
+    return res.status(400).send('Missing required parameters');
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>결제하기 - EveryUnse</title>
+    <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .amount {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        .coins {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .info {
+            font-size: 14px;
+            color: #888;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🔮 EveryUnse</div>
+        <div>주문번호: ${merchant_uid}</div>
+        <div class="amount">${Number(amount).toLocaleString()}원</div>
+        <div class="coins">코인: ${coins}개</div>
+        
+        <button id="payBtn" class="btn" onclick="requestPay()">
+            결제하기
+        </button>
+        
+        <div class="info">
+            📱 모바일 환경에서 최적화된 결제창이 제공됩니다.
+        </div>
+    </div>
+
+    <script>
+        const IMP = window.IMP;
+        IMP.init('imp75075771');
+        
+        function requestPay() {
+            IMP.request_pay({
+                pg: 'html5_inicis',
+                pay_method: 'card',
+                merchant_uid: '${merchant_uid}',
+                name: '${name || '코인 패키지'}',
+                amount: ${amount},
+                buyer_email: 'support@everyunse.com',
+                buyer_name: 'EveryUnse 사용자',
+                buyer_tel: '010-0000-0000',
+                buyer_addr: '서울특별시',
+                buyer_postcode: '123-456',
+                m_redirect_url: window.location.origin + '/payment/complete?returnUrl=' + encodeURIComponent('${returnUrl || ''}')
+            }, function(response) {
+                console.log('Payment response:', response);
+                
+                if (response.success) {
+                    // 결제 성공 시 웹훅 호출
+                    fetch('/webhook/payment', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            sessionId: '${sessionId}',
+                            transactionId: response.imp_uid,
+                            status: 'success',
+                            amount: ${amount},
+                            coins: ${coins}
+                        })
+                    }).then(() => {
+                        alert('결제가 완료되었습니다!');
+                        window.close();
+                    }).catch(error => {
+                        console.error('Webhook error:', error);
+                        alert('결제는 완료되었으나 처리 중 오류가 발생했습니다.');
+                        window.close();
+                    });
+                } else {
+                    console.log('Payment failed:', response);
+                    alert('결제에 실패했습니다: ' + response.error_msg);
+                }
+            });
+        }
+        
+        // 자동 결제 시작
+        setTimeout(() => {
+            requestPay();
+        }, 1000);
+    </script>
+</body>
+</html>
+  `;
+  
+  res.send(html);
+});
+
+// KG Inicis 결제 완료 처리
+app.post('/payment/return', (req, res) => {
+  const { P_STATUS, P_TID, P_OID, P_AMT, P_UNAME } = req.body;
+  const { returnUrl } = req.query;
+  
+  console.log('KG Inicis payment return:', { P_STATUS, P_TID, P_OID, P_AMT, returnUrl });
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>결제 완료 - EveryUnse</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        .success {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success">${P_STATUS === '00' ? '✅' : '❌'}</div>
+        <div class="title">${P_STATUS === '00' ? '결제 완료' : '결제 실패'}</div>
+        <div class="message">
+            ${P_STATUS === '00' ? 
+              '엽전이 충전되었습니다!<br>앱으로 돌아가서 확인해주세요.' : 
+              '결제가 취소되거나 실패했습니다.'
+            }
+        </div>
+        <button class="btn" onclick="goBack()">앱으로 돌아가기</button>
+    </div>
+
+    <script>
+        function goBack() {
+            const returnUrl = '${returnUrl || ''}';
+            if (returnUrl && returnUrl !== 'undefined') {
+                window.location.href = decodeURIComponent(returnUrl);
+            } else {
+                window.location.href = 'https://everyunse.com';
+            }
+        }
+        
+        // 결제 성공 시 웹훅 호출
+        if ('${P_STATUS}' === '00') {
+            const sessionId = extractSessionFromOID('${P_OID}');
+            
+            fetch('/webhook/payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: sessionId,
+                    transactionId: '${P_TID}',
+                    status: 'success',
+                    merchant_uid: '${P_OID}'
+                })
+            }).catch(error => {
+                console.error('Webhook error:', error);
+            });
+        }
+        
+        function extractSessionFromOID(oid) {
+            return 'session_' + oid.split('_')[1] + '_extracted';
+        }
+        
+        // 3초 후 자동으로 원래 페이지로 이동
+        setTimeout(() => {
+            goBack();
+        }, 3000);
+    </script>
+</body>
+</html>
+  `;
+  
+  res.send(html);
+});
+
+// KG Inicis 결제 닫기 처리
+app.get('/payment/close', (req, res) => {
+  const { returnUrl } = req.query;
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>결제 취소 - EveryUnse</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+        <div style="font-size: 24px; font-weight: bold; color: #333; margin-bottom: 20px;">결제 취소</div>
+        <div style="font-size: 16px; color: #666; margin-bottom: 30px;">결제가 취소되었습니다.</div>
+        <button class="btn" onclick="goBack()">앱으로 돌아가기</button>
+    </div>
+
+    <script>
+        function goBack() {
+            const returnUrl = '${returnUrl || ''}';
+            if (returnUrl && returnUrl !== 'undefined') {
+                window.location.href = decodeURIComponent(returnUrl);
+            } else {
+                window.location.href = 'https://everyunse.com';
+            }
+        }
+        
+        // 즉시 원래 페이지로 이동
+        setTimeout(() => {
+            goBack();
+        }, 2000);
+    </script>
+</body>
+</html>
+  `;
+  
+  res.send(html);
+});
+
+// Iamport 결제 검증 API (PC용)
 app.post('/verify-payment', async (req, res) => {
+  const { imp_uid, merchant_uid, sessionId, success, error_msg } = req.body;
+
+  console.log('Payment verification received:', {
+    imp_uid, merchant_uid, sessionId, success, error_msg
+  });
+
+  if (!success) {
+    return res.json({
+      success: false,
+      error: error_msg || '결제 실패',
+      redirectUrl: `https://everyunse.com/coins?payment=error&message=payment_cancelled`
+    });
+  }
+
+  // sessionId를 직접 사용하거나 merchant_uid에서 추출
+  let finalSessionId = sessionId;
+  if (!finalSessionId && merchant_uid) {
+    finalSessionId = extractSessionFromOID(merchant_uid);
+  }
+  
+  console.log('Looking for sessionId:', finalSessionId);
+  
+  // 결제 성공 처리
+  const sessionData = {
+    sessionId: finalSessionId,
+    transactionId: imp_uid,
+    status: 'completed'
+  };
+  
+  // 메인 서비스에 웹훅 전송
+  await notifyMainService(sessionData, 'completed');
+  
+  res.json({
+    success: true,
+    redirectUrl: `https://everyunse.com/coins?payment=success`
+  });
+});
+
+// 결제 완료 처리 (모바일 리디렉션)
+app.get('/payment/complete', (req, res) => {
+  const { imp_uid, merchant_uid, imp_success } = req.query;
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>결제 완료 - EveryUnse</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        .success {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success">${imp_success === 'true' ? '✅' : '❌'}</div>
+        <div class="title">${imp_success === 'true' ? '결제 완료' : '결제 실패'}</div>
+        <div class="message">
+            ${imp_success === 'true' ? 
+              '엽전이 충전되었습니다!<br>앱으로 돌아가서 확인해주세요.' : 
+              '결제가 취소되거나 실패했습니다.'
+            }
+        </div>
+        <button class="btn" onclick="goBack()">앱으로 돌아가기</button>
+    </div>
+
+    <script>
+        // URL에서 returnUrl 파라미터 가져오기
+        const urlParams = new URLSearchParams(window.location.search);
+        const returnUrl = urlParams.get('returnUrl');
+        
+        function goBack() {
+            if (returnUrl) {
+                window.location.href = decodeURIComponent(returnUrl);
+            } else {
+                // 기본 도메인으로 리다이렉트
+                const currentDomain = window.location.hostname;
+                if (currentDomain.includes('everyunse.com')) {
+                    window.location.href = 'https://everyunse.com';
+                } else if (currentDomain.includes('www.everyunse.com')) {
+                    window.location.href = 'https://www.everyunse.com';
+                } else {
+                    window.close();
+                }
+            }
+        }
+        
+        // 결제 성공 시 웹훅 호출
+        if ('${imp_success}' === 'true') {
+            const sessionId = urlParams.get('sessionId') || extractSessionFromOID('${merchant_uid}');
+            
+            fetch('/webhook/payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: sessionId,
+                    transactionId: '${imp_uid}',
+                    status: 'success',
+                    merchant_uid: '${merchant_uid}'
+                })
+            }).catch(error => {
+                console.error('Webhook error:', error);
+            });
+        }
+        
+        function extractSessionFromOID(oid) {
+            return 'session_' + oid.split('_')[1] + '_extracted';
+        }
+        
+        // 3초 후 자동으로 원래 페이지로 이동
+        setTimeout(() => {
+            goBack();
+        }, 3000);
+    </script>
+</body>
+</html>
+  `;
+  
+  res.send(html);
+});
+
+// 웹훅 엔드포인트
+app.post('/webhook/payment', async (req, res) => {
   try {
-    const { imp_uid, merchant_uid, sessionId, success } = req.body;
-    console.log('Payment verification request:', { imp_uid, merchant_uid, sessionId, success });
-
-    if (!success) {
-      return res.json({ success: false, message: '결제가 취소되었습니다.' });
-    }
-
-    // 세션에서 사용자 정보 가져오기
-    const sessionData = paymentSessions.get(sessionId);
-    console.log('Retrieved session data:', sessionData);
-    console.log('All available sessions:', Array.from(paymentSessions.entries()));
-    console.log('Looking for sessionId:', sessionId);
-    console.log('Session exists?', paymentSessions.has(sessionId));
-
-    // 메인 서비스에 웹훅 전송
+    const { sessionId, transactionId, status } = req.body;
+    
+    console.log('Webhook received:', { sessionId, transactionId, status });
+    
+    // 메인 서비스에 결제 결과 전송
     const webhookData = {
-      sessionId: sessionId,
-      transactionId: imp_uid,
-      merchantUid: merchant_uid,
-      status: 'completed',
-      amount: sessionData?.amount || 0,
-      coins: sessionData?.coins || 0,
-      bonusCoins: sessionData?.bonusCoins || 0,
-      userId: sessionData?.userId,
-      packageId: sessionData?.packageId
+      sessionId,
+      transactionId,
+      status,
+      timestamp: new Date().toISOString()
     };
-
-    console.log('Sending webhook data:', webhookData);
-
-    const signature = crypto.createHmac('sha256', WEBHOOK_SECRET)
-      .update(JSON.stringify(webhookData))
-      .digest('hex');
-
+    
     try {
-      await axios.post(`${MAIN_SERVICE_URL}/api/payment/webhook`, webhookData, {
+      const response = await fetch(`${MAIN_SERVICE_URL}/api/payment/webhook`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Webhook-Signature': signature
+          'X-Webhook-Secret': WEBHOOK_SECRET
         },
-        timeout: 10000
+        body: JSON.stringify(webhookData)
       });
-      console.log('Webhook sent successfully');
-    } catch (webhookError) {
-      console.error('Webhook error:', webhookError.message);
+      
+      if (response.ok) {
+        console.log('Webhook sent successfully to main service');
+        res.json({ success: true });
+      } else {
+        console.error('Failed to send webhook to main service:', await response.text());
+        res.status(500).json({ success: false, error: 'Failed to notify main service' });
+      }
+    } catch (error) {
+      console.error('Error sending webhook to main service:', error);
+      res.status(500).json({ success: false, error: 'Failed to notify main service' });
     }
-
-    // 세션 정리
-    paymentSessions.delete(sessionId);
-
-    res.json({ success: true, message: '결제가 완료되었습니다.' });
   } catch (error) {
-    console.error('Payment verification error:', error);
-    res.json({ success: false, message: '결제 검증 중 오류가 발생했습니다.' });
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ success: false, error: 'Webhook processing failed' });
   }
 });
 
-// 모바일 결제 완료 콜백
-app.get('/payment/complete', (req, res) => {
-  const { imp_uid, merchant_uid, imp_success, sessionId, returnUrl } = req.query;
-  console.log('Mobile payment callback:', { imp_uid, merchant_uid, imp_success, sessionId });
+// OID에서 세션 ID 추출
+function extractSessionFromOID(oid) {
+  const match = oid.match(/ORDER_(\d+)/);
+  if (match) {
+    return `session_${match[1]}_extracted`;
+  }
+  return `session_${Date.now()}_fallback`;
+}
 
-  const decodedReturnUrl = returnUrl ? decodeURIComponent(returnUrl) : 'https://everyunse.com';
+// 메인 서비스에 알림 전송
+async function notifyMainService(sessionData, status) {
+  try {
+    const webhookUrl = `${MAIN_SERVICE_URL}/api/payment/webhook`;
+    
+    const payload = {
+      sessionId: sessionData.sessionId,
+      status: status,
+      transactionId: sessionData.transactionId || null,
+      timestamp: new Date().toISOString()
+    };
 
-  if (imp_success === 'true') {
+    console.log('Sending webhook to main service:', webhookUrl, payload);
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Webhook-Secret': WEBHOOK_SECRET
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      console.error('Failed to notify main service:', response.status, await response.text());
+      return false;
+    }
+
+    console.log('Successfully notified main service');
+    return true;
+  } catch (error) {
+    console.error('Error notifying main service:', error);
+    return false;
+  }
+}
+
+// KG Inicis 결제 완료 처리
+app.post('/payment/return', (req, res) => {
+  console.log('Payment return received:', req.body);
+  
+  const { P_STATUS, P_OID, P_AMT, P_UNAME } = req.body;
+  
+  if (P_STATUS === '00') {
+    // 결제 성공
     res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>결제 완료</title>
-          <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 50px; }
-              .success { color: #22c55e; font-size: 24px; margin-bottom: 20px; }
-          </style>
-      </head>
-      <body>
-          <div class="success">✅ 결제가 완료되었습니다!</div>
-          <p>잠시 후 자동으로 이동합니다...</p>
-          <script>
-              // 결제 검증 요청
-              fetch('/verify-payment', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      imp_uid: '${imp_uid}',
-                      merchant_uid: '${merchant_uid}',
-                      sessionId: '${sessionId}',
-                      success: true
-                  })
-              }).finally(() => {
-                  setTimeout(() => {
-                      window.location.href = '${decodedReturnUrl}';
-                  }, 2000);
-              });
-          </script>
-      </body>
-      </html>
+      <script>
+        alert('결제가 완료되었습니다!');
+        window.opener.postMessage({type: 'payment_success', oid: '${P_OID}'}, '*');
+        window.close();
+      </script>
     `);
   } else {
+    // 결제 실패
     res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>결제 취소</title>
-          <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 50px; }
-              .error { color: #ef4444; font-size: 24px; margin-bottom: 20px; }
-          </style>
-      </head>
-      <body>
-          <div class="error">❌ 결제가 취소되었습니다</div>
-          <p>잠시 후 자동으로 이동합니다...</p>
-          <script>
-              setTimeout(() => {
-                  window.location.href = '${decodedReturnUrl}';
-              }, 2000);
-          </script>
-      </body>
-      </html>
+      <script>
+        alert('결제가 실패했습니다.');
+        window.opener.postMessage({type: 'payment_fail', oid: '${P_OID}'}, '*');
+        window.close();
+      </script>
     `);
   }
+});
+
+// KG Inicis 결제창 닫기 처리
+app.post('/payment/close', (req, res) => {
+  console.log('Payment close received:', req.body);
+  
+  res.send(`
+    <script>
+      window.opener.postMessage({type: 'payment_close'}, '*');
+      window.close();
+    </script>
+  `);
 });
 
 app.listen(PORT, () => {
