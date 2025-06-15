@@ -528,7 +528,7 @@ app.get('/', async (req, res) => {
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
             notification.textContent = message;
-            notification.className = \`notification \${type}\`;
+            notification.className = 'notification ' + type;
             notification.style.display = 'block';
             
             setTimeout(() => {
@@ -536,29 +536,31 @@ app.get('/', async (req, res) => {
             }, 3000);
         }
 
-        function getReturnUrl() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('returnUrl') || 'https://www.everyunse.com';
-        }
-
         function goBack() {
             const returnUrl = getReturnUrl();
             window.location.href = returnUrl;
         }
 
+        function getReturnUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('returnUrl') || 'https://www.everyunse.com/';
+        }
+
         async function selectPackage(packageData) {
+            console.log('Package selected:', packageData);
+            
             if (!sessionId || !userId) {
                 showNotification('세션 정보가 없습니다. 다시 시도해주세요.', 'error');
                 return;
             }
 
             try {
-                console.log('Selecting package:', packageData);
-                
                 // 세션 데이터 업데이트
                 const updateResponse = await fetch('/api/update-session', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                     body: JSON.stringify({
                         sessionId: sessionId,
                         packageId: packageData.id,
@@ -568,35 +570,49 @@ app.get('/', async (req, res) => {
                     })
                 });
 
-                if (!updateResponse.ok) {
-                    throw new Error('세션 업데이트 실패');
+                const updateResult = await updateResponse.json();
+                if (!updateResult.success) {
+                    showNotification('세션 업데이트에 실패했습니다.', 'error');
+                    return;
                 }
 
-                console.log('Session updated, starting payment...');
-                
-                // 아임포트 결제 시작
-                const merchant_uid = \`oid_\${sessionId}_\${Date.now()}\`;
-                
+                // Iamport 결제 실행
                 IMP.request_pay({
-                    pg: 'kakaopay.TC0ONETIME',
+                    pg: 'inicis_unified',
                     pay_method: 'card',
-                    merchant_uid: merchant_uid,
-                    name: packageData.name,
+                    merchant_uid: 'EveryUnse_' + sessionId + '_' + Date.now(),
+                    name: packageData.name + ' 엽전 충전',
                     amount: packageData.price,
-                    buyer_name: '고객',
-                    buyer_email: 'customer@example.com'
+                    buyer_email: '',
+                    buyer_name: '엽전 충전',
+                    buyer_tel: '',
+                    buyer_addr: '',
+                    buyer_postcode: '',
+                    custom_data: {
+                        sessionId: sessionId,
+                        userId: userId,
+                        packageId: packageData.id,
+                        coins: packageData.coins,
+                        bonusCoins: packageData.bonusCoins || 0
+                    },
+                    m_redirect_url: window.location.origin + '/payment-complete'
                 }, function(rsp) {
                     console.log('Payment response:', rsp);
                     
                     if (rsp.success) {
-                        fetch('/verify-payment', {
+                        showNotification('결제를 진행합니다...');
+                        
+                        // 결제 검증
+                        fetch('/webhook', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
                             body: JSON.stringify({
                                 imp_uid: rsp.imp_uid,
                                 merchant_uid: rsp.merchant_uid,
-                                sessionId: sessionId,
-                                success: true
+                                status: 'paid',
+                                custom_data: rsp.custom_data
                             })
                         })
                         .then(response => response.json())
@@ -714,31 +730,24 @@ app.post('/api/update-session', (req, res) => {
   }
 });
 
-// sessionId에서 추출하는 함수
+// OID에서 세션 ID 추출
 function extractSessionFromOID(oid) {
-  // oid_sessionId_timestamp 형태에서 sessionId 추출
   const parts = oid.split('_');
-  if (parts.length >= 3) {
-    // 첫 번째 'oid'를 제거하고 마지막 timestamp를 제거
-    return parts.slice(1, -1).join('_');
+  if (parts.length >= 2) {
+    return parts[1] + '_' + parts[2];
   }
   return null;
 }
 
-// 메인 서비스에 결제 완료 알림
+// 메인 서비스에 결제 결과 알림
 async function notifyMainService(sessionData, status) {
   try {
-    const webhookUrl = `${MAIN_SERVICE_URL}/api/payment/webhook`;
-    console.log('Sending webhook to:', webhookUrl);
-    console.log('Session data for webhook:', sessionData);
-    
-    const response = await axios.post(webhookUrl, {
-      sessionId: sessionData.sessionId,
+    const response = await axios.post(`${MAIN_SERVICE_URL}/api/webhook/payment`, {
       userId: sessionData.userId,
       packageId: sessionData.packageId,
       amount: sessionData.amount,
       coins: sessionData.coins,
-      bonusCoins: sessionData.bonusCoins || 0,
+      bonusCoins: sessionData.bonusCoins,
       status: status,
       timestamp: Date.now()
     }, {
@@ -748,166 +757,117 @@ async function notifyMainService(sessionData, status) {
       }
     });
     
-    console.log('Webhook response:', response.status, response.data);
+    console.log('Main service notification sent:', response.data);
     return response.data;
   } catch (error) {
     console.error('Failed to notify main service:', error.message);
-    if (error.response) {
-      console.error('Error response:', error.response.status, error.response.data);
-    }
     throw error;
   }
 }
 
-// 아임포트 결제 검증 API
-app.post('/verify-payment', async (req, res) => {
-  const { imp_uid, merchant_uid, sessionId, success, error_msg } = req.body;
-
-  console.log('Payment verification received:', {
-    imp_uid, merchant_uid, sessionId, success, error_msg
-  });
-
-  if (!success) {
-    return res.json({
-      success: false,
-      error: error_msg || '결제 실패',
-      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=payment_cancelled`
-    });
-  }
-
-  // sessionId를 직접 사용하거나 merchant_uid에서 추출
-  let finalSessionId = sessionId;
-  if (!finalSessionId && merchant_uid) {
-    finalSessionId = extractSessionFromOID(merchant_uid);
-  }
-  
-  console.log('Looking for sessionId:', finalSessionId);
-  console.log('Available sessions:', Array.from(paymentSessions.keys()));
-
-  if (!finalSessionId) {
-    console.error('No sessionId available');
-    return res.json({
-      success: false,
-      error: 'Session ID not found',
-      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=session_not_found`
-    });
-  }
-
-  const sessionData = paymentSessions.get(finalSessionId);
-  if (!sessionData) {
-    console.error('Session not found for ID:', finalSessionId);
-    return res.json({
-      success: false,
-      error: 'Session not found',
-      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=session_not_found`
-    });
-  }
-
-  console.log('Found session data:', sessionData);
-
+// 웹훅 엔드포인트 (결제 완료 처리)
+app.post('/webhook', async (req, res) => {
   try {
-    // 메인 서비스에 결제 완료 알림
-    const webhookData = {
-      ...sessionData,
-      sessionId: finalSessionId,
-      transactionId: imp_uid,
-      merchantUid: merchant_uid
-    };
+    const { imp_uid, merchant_uid, status, custom_data } = req.body;
+    console.log('Received webhook:', { imp_uid, merchant_uid, status, custom_data });
     
-    await notifyMainService(webhookData, 'success');
+    // merchant_uid에서 세션 ID 추출
+    const sessionId = custom_data?.sessionId;
+    if (!sessionId) {
+      console.error('No sessionId in custom_data');
+      return res.status(400).json({ success: false, error: 'No session ID' });
+    }
     
-    // 세션 정리
-    paymentSessions.delete(finalSessionId);
+    const sessionData = paymentSessions.get(sessionId);
+    if (!sessionData) {
+      console.error('Session not found:', sessionId);
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
     
-    // 성공 응답과 함께 리다이렉트 URL 제공
-    const returnUrl = sessionData.returnUrl || `${MAIN_SERVICE_URL}`;
-    res.json({
-      success: true,
-      message: '결제가 성공적으로 완료되었습니다',
-      redirectUrl: `${returnUrl}?payment=success&coins=${sessionData.coins}`
-    });
-    
-  } catch (error) {
-    console.error('Error processing payment completion:', error);
-    res.json({
-      success: false,
-      error: '결제 처리 중 오류가 발생했습니다',
-      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=processing_failed`
-    });
-  }
-});
-
-// KG Inicis 결제 결과 처리
-app.post('/inicis/return', async (req, res) => {
-  console.log('KG Inicis return received:', req.body);
-  
-  const { P_STATUS, P_RMESG1, P_TID, P_OID } = req.body;
-  
-  // P_OID에서 sessionId 추출
-  const sessionId = extractSessionFromOID(P_OID);
-  
-  if (!sessionId) {
-    console.error('Cannot extract sessionId from P_OID:', P_OID);
-    return res.redirect(`${MAIN_SERVICE_URL}?payment=error&message=invalid_order_id`);
-  }
-  
-  const sessionData = paymentSessions.get(sessionId);
-  if (!sessionData) {
-    console.error('Session not found for extracted sessionId:', sessionId);
-    return res.redirect(`${MAIN_SERVICE_URL}?payment=error&message=session_not_found`);
-  }
-
-  try {
-    if (P_STATUS === '00') {
-      // 결제 성공
-      console.log('KG Inicis payment successful:', { P_TID, P_OID, sessionId });
-      
-      const webhookData = {
-        ...sessionData,
-        sessionId: sessionId,
-        transactionId: P_TID,
-        merchantUid: P_OID
-      };
-      
-      await notifyMainService(webhookData, 'success');
-      
-      // 세션 정리
-      paymentSessions.delete(sessionId);
-      
-      const returnUrl = sessionData.returnUrl || `${MAIN_SERVICE_URL}`;
-      res.redirect(`${returnUrl}?payment=success&coins=${sessionData.coins}`);
-      
+    if (status === 'paid') {
+      // 메인 서비스에 결제 완료 알림
+      try {
+        await notifyMainService(sessionData, 'completed');
+        
+        // 세션 삭제
+        paymentSessions.delete(sessionId);
+        
+        res.json({ success: true, message: 'Payment processed successfully' });
+      } catch (error) {
+        console.error('Failed to process payment:', error);
+        res.status(500).json({ success: false, error: 'Failed to process payment' });
+      }
     } else {
-      // 결제 실패
-      console.log('KG Inicis payment failed:', { P_STATUS, P_RMESG1, P_OID });
-      
-      const webhookData = {
-        ...sessionData,
-        sessionId: sessionId,
-        error: P_RMESG1
-      };
-      
-      await notifyMainService(webhookData, 'failed');
-      
-      // 세션 정리
-      paymentSessions.delete(sessionId);
-      
-      const returnUrl = sessionData.returnUrl || `${MAIN_SERVICE_URL}`;
-      res.redirect(`${returnUrl}?payment=error&message=${encodeURIComponent(P_RMESG1)}`);
+      res.json({ success: false, error: 'Payment not completed' });
     }
     
   } catch (error) {
-    console.error('Error processing KG Inicis return:', error);
-    const returnUrl = sessionData.returnUrl || `${MAIN_SERVICE_URL}`;
-    res.redirect(`${returnUrl}?payment=error&message=processing_failed`);
+    console.error('Webhook error:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// 결제 완료 페이지 (모바일 리다이렉트용)
+app.get('/payment-complete', (req, res) => {
+  const { imp_uid, merchant_uid, imp_success } = req.query;
+  
+  if (imp_success === 'true') {
+    res.send(`
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>결제 완료</title>
+        </head>
+        <body>
+          <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+            <h2>결제가 완료되었습니다!</h2>
+            <p>잠시 후 자동으로 이동합니다...</p>
+            <script>
+              setTimeout(() => {
+                window.location.href = 'https://www.everyunse.com/';
+              }, 2000);
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    res.send(`
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>결제 실패</title>
+        </head>
+        <body>
+          <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+            <h2>결제에 실패했습니다</h2>
+            <p>다시 시도해주세요.</p>
+            <script>
+              setTimeout(() => {
+                window.location.href = 'https://www.everyunse.com/';
+              }, 3000);
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// 세션 정보 확인 엔드포인트 (디버깅용)
+app.get('/api/session/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const sessionData = paymentSessions.get(sessionId);
+  
+  if (sessionData) {
+    res.json({ success: true, data: sessionData });
+  } else {
+    res.status(404).json({ success: false, error: 'Session not found' });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Payment service running on port ${PORT}`);
-  console.log('Environment:', {
-    INICIS_MID,
-    MAIN_SERVICE_URL,
-    NODE_ENV: process.env.NODE_ENV
-  });
 });
