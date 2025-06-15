@@ -593,6 +593,9 @@ app.post('/verify-payment', async (req, res) => {
     // 세션에서 사용자 정보 가져오기
     const sessionData = paymentSessions.get(sessionId);
     console.log('Retrieved session data:', sessionData);
+    console.log('All available sessions:', Array.from(paymentSessions.entries()));
+    console.log('Looking for sessionId:', sessionId);
+    console.log('Session exists?', paymentSessions.has(sessionId));
 
     // 메인 서비스에 웹훅 전송
     const webhookData = {
