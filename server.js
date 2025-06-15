@@ -441,53 +441,59 @@ app.get('/', async (req, res) => {
             }
         }
 
-        // PG 모듈 초기화
+        // PG 모듈 초기화 - Form 방식으로 변경
         function initializePayment(packageData, sessionId, merchant_uid) {
-            // KG Inicis 결제 모듈 로드
-            const script = document.createElement('script');
-            script.src = 'https://stdpay.inicis.com/stdjs/INIStdPay.js';
-            script.onload = function() {
-                requestPayment(packageData, sessionId, merchant_uid);
-            };
-            document.head.appendChild(script);
-        }
+            // KG Inicis Form 방식으로 결제 페이지 이동
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'https://stdpay.inicis.com/stdpay/pay.php';
+            form.target = '_self';
 
-        // 결제 요청
-        function requestPayment(packageData, sessionId, merchant_uid) {
-            const timestamp = Date.now().toString();
-            const signKey = 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
-            
-            // 서명 생성
-            const hashData = 'INIpayTest' + merchant_uid + packageData.price + signKey;
-            const signature = btoa(hashData).substr(0, 32);
-
-            const paymentData = {
+            const formData = {
+                version: '1.0',
                 mid: 'INIpayTest',
-                oid: merchant_uid,
-                price: packageData.price.toString(),
-                timestamp: timestamp,
-                signature: signature,
-                mKey: signKey,
-                currency: 'WON',
                 goodname: packageData.name,
+                oid: merchant_uid,
+                price: packageData.price,
+                currency: 'WON',
                 buyername: '구매자',
                 buyertel: '01000000000',
                 buyeremail: 'test@example.com',
+                gopaymethod: 'Card',
                 returnUrl: window.location.origin + '/payment/return',
                 closeUrl: window.location.origin + '/payment/close',
-                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)',
-                popupYn: 'Y'
+                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)'
             };
 
-            console.log('Payment data:', paymentData);
+            // 폼 필드 생성
+            Object.keys(formData).forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = formData[key];
+                form.appendChild(input);
+            });
 
-            // KG Inicis 결제창 호출
-            try {
-                INIStdPay.pay(paymentData);
-            } catch (error) {
-                console.error('Payment error:', error);
-                showNotification('결제 초기화 중 오류가 발생했습니다.');
-            }
+            // 서명 생성 및 추가
+            const timestamp = Date.now().toString();
+            const signKey = 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+            const hashData = formData.mid + formData.oid + formData.price + signKey;
+            const signature = btoa(hashData).substr(0, 32);
+
+            const timestampInput = document.createElement('input');
+            timestampInput.type = 'hidden';
+            timestampInput.name = 'timestamp';
+            timestampInput.value = timestamp;
+            form.appendChild(timestampInput);
+
+            const signatureInput = document.createElement('input');
+            signatureInput.type = 'hidden';
+            signatureInput.name = 'signature';
+            signatureInput.value = signature;
+            form.appendChild(signatureInput);
+
+            document.body.appendChild(form);
+            form.submit();
         }
 
 
