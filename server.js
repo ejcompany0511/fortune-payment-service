@@ -677,8 +677,8 @@ app.get('/', async (req, res) => {
                         '<div class="package-coins">' + pkg.coins.toLocaleString() + '</div>' +
                         '<div class="package-coins-label">엽전</div>' +
                         (pkg.bonusCoins > 0 ? '<div class="package-bonus">+' + pkg.bonusCoins + ' 보너스</div>' : '') +
-                        '<div class="package-price">₩' + pkg.price.toLocaleString() + '</div>' +
-                        '<button class="package-btn ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage({id: ' + pkg.id + ', name: \\'' + pkg.name + '\\', coins: ' + pkg.coins + ', bonusCoins: ' + (pkg.bonusCoins || 0) + ', price: ' + pkg.price + '})">구매하기</button>';
+                        '<div class="package-price">₩' + parseFloat(pkg.price).toLocaleString() + '</div>' +
+                        '<button class="package-btn ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage({id: ' + pkg.id + ', name: \\'' + pkg.name + '\\', coins: ' + pkg.coins + ', bonusCoins: ' + (pkg.bonusCoins || 0) + ', price: ' + parseFloat(pkg.price) + '})">구매하기</button>';
                     
                     container.appendChild(packageElement);
                     console.log('Package element added:', packageElement);
