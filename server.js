@@ -59,6 +59,8 @@ app.post('/api/create-payment', async (req, res) => {
       timestamp: Date.now()
     });
     
+    console.log('Stored payment session:', sessionId, { userId, packageId, amount, coins });
+    
     res.json({
       success: true,
       sessionId: sessionId,
@@ -547,16 +549,24 @@ app.post('/verify-payment', async (req, res) => {
       return res.json({ success: false, message: '결제가 취소되었습니다.' });
     }
 
+    // 세션에서 사용자 정보 가져오기
+    const sessionData = paymentSessions.get(sessionId);
+    console.log('Retrieved session data:', sessionData);
+
     // 메인 서비스에 웹훅 전송
     const webhookData = {
       sessionId: sessionId,
       transactionId: imp_uid,
       merchantUid: merchant_uid,
       status: 'completed',
-      amount: req.body.amount || 0,
-      coins: req.body.coins || 0,
-      bonusCoins: req.body.bonusCoins || 0
+      amount: sessionData?.amount || req.body.amount || 0,
+      coins: sessionData?.coins || req.body.coins || 0,
+      bonusCoins: req.body.bonusCoins || 0,
+      userId: sessionData?.userId,
+      packageId: sessionData?.packageId
     };
+
+    console.log('Sending webhook data:', webhookData);
 
     const signature = crypto.createHmac('sha256', WEBHOOK_SECRET)
       .update(JSON.stringify(webhookData))
@@ -570,9 +580,13 @@ app.post('/verify-payment', async (req, res) => {
         },
         timeout: 10000
       });
+      console.log('Webhook sent successfully');
     } catch (webhookError) {
       console.error('Webhook error:', webhookError.message);
     }
+
+    // 세션 정리
+    paymentSessions.delete(sessionId);
 
     res.json({ success: true, message: '결제가 완료되었습니다.' });
   } catch (error) {
