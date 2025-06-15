@@ -177,7 +177,7 @@ app.get('/', async (req, res) => {
                     </button>
                     <h1 class="header-title">엽전 상점</h1>
                 </div>
-                <div class="balance-info">잔액: 0 엽전</div>
+
             </div>
         </header>
 
