@@ -78,6 +78,13 @@ app.get('/', async (req, res) => {
     const packages = await getCoinPackages();
     const sessionId = req.query.sessionId;
     
+    // URL에서 sessionId 확인하여 세션 데이터 가져오기
+    let sessionData = null;
+    if (sessionId) {
+      sessionData = paymentSessions.get(sessionId);
+      console.log('Retrieved session data for page load:', sessionData);
+    }
+
     const html = `
 <!DOCTYPE html>
 <html lang="ko">
@@ -392,6 +399,9 @@ app.get('/', async (req, res) => {
     <script>
         let selectedPackage = null;
         const packages = ${JSON.stringify(packages)};
+        const sessionData = ${JSON.stringify(sessionData)};
+        
+        console.log('Session data:', sessionData);
 
         function renderPackages() {
             const grid = document.getElementById('packagesGrid');
@@ -439,6 +449,26 @@ app.get('/', async (req, res) => {
                 const merchant_uid = 'ORDER_' + Date.now() + Math.random().toString(36).substr(2, 5);
                 
                 console.log('Using sessionId from URL:', sessionId);
+                console.log('Session data available:', sessionData);
+                
+                // 세션에 패키지 정보 업데이트 (사용자가 다른 패키지를 선택했을 수 있음)
+                if (sessionId) {
+                    try {
+                        await fetch('/api/update-session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                sessionId: sessionId,
+                                packageId: selectedPackage.id,
+                                amount: selectedPackage.price,
+                                coins: selectedPackage.coins + (selectedPackage.bonusCoins || 0)
+                            })
+                        });
+                        console.log('Session updated on server');
+                    } catch (error) {
+                        console.error('Failed to update session:', error);
+                    }
+                }
                 
                 initializePayment(selectedPackage, sessionId, merchant_uid);
                 
@@ -536,6 +566,30 @@ app.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error loading coin shop:', error);
     res.status(500).send('서버 오류가 발생했습니다.');
+  }
+});
+
+// 세션 데이터 업데이트 엔드포인트
+app.post('/api/update-session', (req, res) => {
+  try {
+    const { sessionId, packageId, amount, coins } = req.body;
+    console.log('Updating session data:', { sessionId, packageId, amount, coins });
+    
+    const sessionData = paymentSessions.get(sessionId);
+    if (sessionData) {
+      sessionData.packageId = packageId;
+      sessionData.amount = amount;
+      sessionData.coins = coins;
+      paymentSessions.set(sessionId, sessionData);
+      console.log('Session updated successfully:', sessionData);
+      res.json({ success: true });
+    } else {
+      console.error('Session not found:', sessionId);
+      res.status(404).json({ success: false, error: 'Session not found' });
+    }
+  } catch (error) {
+    console.error('Error updating session:', error);
+    res.status(500).json({ success: false, error: 'Failed to update session' });
   }
 });
 
