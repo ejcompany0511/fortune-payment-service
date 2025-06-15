@@ -16,9 +16,6 @@
     "uuid": "^9.0.1",
     "ejs": "^3.1.9"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
   "engines": {
     "node": ">=18.0.0"
   }
