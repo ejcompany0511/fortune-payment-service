@@ -452,7 +452,7 @@ app.get('/', async (req, res) => {
             // KG Inicis Form 방식으로 결제 페이지 이동
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = 'https://stdpay.inicis.com/stdpay/pay.php';
+            form.action = 'https://stdpay.inicis.com/inicis/std/payView.jsp';
             form.target = '_self';
 
             const timestamp = Date.now().toString();
