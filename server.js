@@ -630,30 +630,45 @@ app.get('/', async (req, res) => {
         async function renderPackages() {
             try {
                 const packages = ${JSON.stringify(packages)};
+                console.log('Packages data:', packages);
+                
                 const container = document.getElementById('packages-container');
+                console.log('Container found:', container);
+                
+                if (!container) {
+                    console.error('packages-container not found');
+                    return;
+                }
+                
+                if (!packages || packages.length === 0) {
+                    console.error('No packages data available');
+                    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #6b7280;">패키지 정보를 불러올 수 없습니다.</div>';
+                    return;
+                }
                 
                 packages.forEach((pkg, index) => {
+                    console.log('Processing package:', pkg);
                     const isPopular = index === 1;
                     const iconClasses = ['blue', 'purple', 'gold', 'rose'];
                     const iconClass = iconClasses[index % iconClasses.length];
                     
                     const packageElement = document.createElement('div');
-                    packageElement.className = \`package-card \${isPopular ? 'popular' : ''}\`;
-                    packageElement.innerHTML = \`
-                        \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
-                        <div class="package-icon \${iconClass}">💰</div>
-                        <h4 class="package-name">\${pkg.name}</h4>
-                        <div class="package-coins">\${pkg.coins.toLocaleString()}</div>
-                        <div class="package-coins-label">엽전</div>
-                        \${pkg.bonusCoins > 0 ? \`<div class="package-bonus">+\${pkg.bonusCoins} 보너스</div>\` : ''}
-                        <div class="package-price">₩\${pkg.price.toLocaleString()}</div>
-                        <button class="package-btn \${isPopular ? 'popular' : ''}" onclick="selectPackage({id: \${pkg.id}, name: '\${pkg.name}', coins: \${pkg.coins}, bonusCoins: \${pkg.bonusCoins || 0}, price: \${pkg.price}})">
-                            구매하기
-                        </button>
-                    \`;
+                    packageElement.className = 'package-card ' + (isPopular ? 'popular' : '');
+                    packageElement.innerHTML = 
+                        (isPopular ? '<div class="popular-badge">인기</div>' : '') +
+                        '<div class="package-icon ' + iconClass + '">💰</div>' +
+                        '<h4 class="package-name">' + pkg.name + '</h4>' +
+                        '<div class="package-coins">' + pkg.coins.toLocaleString() + '</div>' +
+                        '<div class="package-coins-label">엽전</div>' +
+                        (pkg.bonusCoins > 0 ? '<div class="package-bonus">+' + pkg.bonusCoins + ' 보너스</div>' : '') +
+                        '<div class="package-price">₩' + pkg.price.toLocaleString() + '</div>' +
+                        '<button class="package-btn ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage({id: ' + pkg.id + ', name: \\'' + pkg.name + '\\', coins: ' + pkg.coins + ', bonusCoins: ' + (pkg.bonusCoins || 0) + ', price: ' + pkg.price + '})">구매하기</button>';
                     
                     container.appendChild(packageElement);
+                    console.log('Package element added:', packageElement);
                 });
+                
+                console.log('All packages rendered successfully');
                 
             } catch (error) {
                 console.error('Error rendering packages:', error);
