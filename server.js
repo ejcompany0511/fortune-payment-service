@@ -580,66 +580,77 @@ app.get('/', async (req, res) => {
                     return;
                 }
 
-                // Iamport 결제 실행
+                // KG 이니시스 결제 실행
+                console.log('Starting KG Inicis payment...');
+                
                 IMP.request_pay({
-                    pg: 'inicis_unified',
+                    pg: 'html5_inicis',
                     pay_method: 'card',
-                    merchant_uid: 'EveryUnse_' + sessionId + '_' + Date.now(),
-                    name: packageData.name + ' 엽전 충전',
-                    amount: packageData.price,
-                    buyer_email: '',
-                    buyer_name: '엽전 충전',
-                    buyer_tel: '',
-                    buyer_addr: '',
-                    buyer_postcode: '',
-                    custom_data: {
-                        sessionId: sessionId,
-                        userId: userId,
-                        packageId: packageData.id,
-                        coins: packageData.coins,
-                        bonusCoins: packageData.bonusCoins || 0
-                    },
-                    m_redirect_url: window.location.origin + '/payment-complete'
-                }, function(rsp) {
-                    console.log('Payment response:', rsp);
-                    
-                    if (rsp.success) {
-                        showNotification('결제를 진행합니다...');
+                        merchant_uid: 'EveryUnse_' + sessionId + '_' + Date.now(),
+                        name: packageData.name + ' 엽전 충전',
+                        amount: packageData.price,
+                        buyer_email: '',
+                        buyer_name: '엽전 충전',
+                        buyer_tel: '',
+                        buyer_addr: '',
+                        buyer_postcode: '',
+                        custom_data: {
+                            sessionId: sessionId,
+                            userId: userId,
+                            packageId: packageData.id,
+                            coins: packageData.coins,
+                            bonusCoins: packageData.bonusCoins || 0
+                        },
+                        m_redirect_url: window.location.origin + '/payment-complete'
+                    }, function(rsp) {
+                        console.log('Payment response:', rsp);
                         
-                        // 결제 검증
-                        fetch('/webhook', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                imp_uid: rsp.imp_uid,
-                                merchant_uid: rsp.merchant_uid,
-                                status: 'paid',
-                                custom_data: rsp.custom_data
+                        if (rsp.success) {
+                            showNotification('결제를 진행합니다...');
+                            
+                            // 결제 검증
+                            fetch('/webhook', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    imp_uid: rsp.imp_uid,
+                                    merchant_uid: rsp.merchant_uid,
+                                    status: 'paid',
+                                    custom_data: rsp.custom_data
+                                })
                             })
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            console.log('Verification response:', data);
-                            if (data.success) {
-                                showNotification('결제가 완료되었습니다!');
-                                setTimeout(() => {
-                                    const returnUrl = getReturnUrl();
-                                    window.location.href = returnUrl;
-                                }, 1500);
-                            } else {
-                                showNotification('결제 검증 실패', 'error');
+                            .then(response => response.json())
+                            .then(data => {
+                                console.log('Verification response:', data);
+                                if (data.success) {
+                                    showNotification('결제가 완료되었습니다!');
+                                    setTimeout(() => {
+                                        const returnUrl = getReturnUrl();
+                                        window.location.href = returnUrl;
+                                    }, 1500);
+                                } else {
+                                    showNotification('결제 검증 실패', 'error');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Verification error:', error);
+                                showNotification('결제 검증 중 오류 발생', 'error');
+                            });
+                        } else {
+                            console.log('KG Inicis payment failed:', rsp.error_msg);
+                            console.log('Error code:', rsp.error_code);
+                            
+                            // PG 설정 관련 오류 메시지 개선
+                            let errorMessage = rsp.error_msg;
+                            if (rsp.error_code === 'NOT_READY') {
+                                errorMessage = 'KG 이니시스 PG 설정을 확인해주세요. Iamport 관리자 페이지에서 KG 이니시스가 활성화되어 있는지 확인하세요.';
                             }
-                        })
-                        .catch(error => {
-                            console.error('Verification error:', error);
-                            showNotification('결제 검증 중 오류 발생', 'error');
-                        });
-                    } else {
-                        showNotification('결제 실패: ' + rsp.error_msg, 'error');
-                    }
-                });
+                            
+                            showNotification('결제 실패: ' + errorMessage, 'error');
+                        }
+                    });
                 
             } catch (error) {
                 console.error('Payment error:', error);
