@@ -393,7 +393,7 @@ app.get('/', async (req, res) => {
                     <div class="package-card" onclick="selectPackage(\${pkg.id})">
                         <div class="package-icon \${iconClass}">💰</div>
                         <div class="package-name">\${pkg.name}</div>
-                        <div class="package-price \${priceClass}">\${pkg.price.toLocaleString()}</div>
+                        <div class="package-price \${priceClass}">\${Math.floor(pkg.price).toLocaleString()}</div>
                         <div class="package-unit">원</div>
                     </div>
                 \`;
@@ -415,7 +415,7 @@ app.get('/', async (req, res) => {
             // 구매 버튼 표시
             const purchaseBtn = document.getElementById('purchaseBtn');
             purchaseBtn.classList.add('show');
-            purchaseBtn.textContent = \`\${selectedPackage.name} 구매하기 (\${selectedPackage.price.toLocaleString()}원)\`;
+            purchaseBtn.textContent = \`\${selectedPackage.name} 구매하기 (\${Math.floor(selectedPackage.price).toLocaleString()}원)\`;
         }
 
         // 구매 처리
@@ -432,9 +432,8 @@ app.get('/', async (req, res) => {
                 const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 const merchant_uid = 'ORDER_' + Date.now() + Math.random().toString(36).substr(2, 5);
                 
-                // 결제 페이지로 리디렉션
-                const paymentUrl = \`/payment?amount=\${selectedPackage.price}&coins=\${selectedPackage.coins}&sessionId=\${sessionId}&merchant_uid=\${merchant_uid}&name=\${encodeURIComponent(selectedPackage.name)}\`;
-                window.location.href = paymentUrl;
+                // 바로 PG 모듈 초기화
+                initializePayment(selectedPackage, sessionId, merchant_uid);
                 
             } catch (error) {
                 console.error('Purchase error:', error);
@@ -442,10 +441,64 @@ app.get('/', async (req, res) => {
             }
         }
 
+        // PG 모듈 초기화
+        function initializePayment(packageData, sessionId, merchant_uid) {
+            // KG Inicis 결제 모듈 로드
+            const script = document.createElement('script');
+            script.src = 'https://stdpay.inicis.com/stdjs/INIStdPay.js';
+            script.onload = function() {
+                requestPayment(packageData, sessionId, merchant_uid);
+            };
+            document.head.appendChild(script);
+        }
+
+        // 결제 요청
+        function requestPayment(packageData, sessionId, merchant_uid) {
+            const paymentData = {
+                mid: 'INIpayTest', // 테스트용 MID
+                oid: merchant_uid,
+                price: packageData.price,
+                timestamp: Date.now(),
+                signature: generateSignature(merchant_uid, packageData.price),
+                mKey: 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS',
+                currency: 'WON',
+                goodname: packageData.name,
+                buyername: '구매자',
+                buyertel: '010-0000-0000',
+                buyeremail: 'test@example.com',
+                returnUrl: window.location.origin + '/payment/return',
+                closeUrl: window.location.origin + '/payment/close',
+                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)'
+            };
+
+            // KG Inicis 결제창 호출
+            INIStdPay.pay(paymentData);
+        }
+
+        // 서명 생성 (간단한 버전)
+        function generateSignature(oid, price) {
+            const timestamp = Date.now();
+            return btoa(oid + price + timestamp).substr(0, 32);
+        }
+
         // 뒤로 가기
         function goBack() {
             window.close();
         }
+
+        // 결제 결과 메시지 리스너
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'payment_success') {
+                showNotification('결제가 완료되었습니다!');
+                setTimeout(() => {
+                    window.close();
+                }, 2000);
+            } else if (event.data.type === 'payment_fail') {
+                showNotification('결제가 실패했습니다.');
+            } else if (event.data.type === 'payment_close') {
+                showNotification('결제가 취소되었습니다.');
+            }
+        });
 
         // 알림 표시
         function showNotification(message) {
@@ -826,6 +879,45 @@ async function notifyMainService(sessionData, status) {
     return false;
   }
 }
+
+// KG Inicis 결제 완료 처리
+app.post('/payment/return', (req, res) => {
+  console.log('Payment return received:', req.body);
+  
+  const { P_STATUS, P_OID, P_AMT, P_UNAME } = req.body;
+  
+  if (P_STATUS === '00') {
+    // 결제 성공
+    res.send(`
+      <script>
+        alert('결제가 완료되었습니다!');
+        window.opener.postMessage({type: 'payment_success', oid: '${P_OID}'}, '*');
+        window.close();
+      </script>
+    `);
+  } else {
+    // 결제 실패
+    res.send(`
+      <script>
+        alert('결제가 실패했습니다.');
+        window.opener.postMessage({type: 'payment_fail', oid: '${P_OID}'}, '*');
+        window.close();
+      </script>
+    `);
+  }
+});
+
+// KG Inicis 결제창 닫기 처리
+app.post('/payment/close', (req, res) => {
+  console.log('Payment close received:', req.body);
+  
+  res.send(`
+    <script>
+      window.opener.postMessage({type: 'payment_close'}, '*');
+      window.close();
+    </script>
+  `);
+});
 
 app.listen(PORT, () => {
   console.log(`Payment service running on port ${PORT}`);
