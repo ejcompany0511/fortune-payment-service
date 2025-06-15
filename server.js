@@ -56,6 +56,7 @@ app.get('/', async (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>엽전 상점 - EveryUnse</title>
+    <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
     <style>
         * {
             margin: 0;
@@ -447,51 +448,64 @@ app.get('/', async (req, res) => {
             return urlParams.get('returnUrl') || 'https://everyunse.com';
         }
 
-        // PG 모듈 초기화 - Form 방식으로 변경
+        // Iamport 초기화
+        const IMP = window.IMP;
+        IMP.init('imp57573124'); // 테스트 가맹점 코드
+
+        // Iamport를 통한 KG Inicis 결제
         function initializePayment(packageData, sessionId, merchant_uid) {
-            // KG Inicis Form 방식으로 결제 페이지 이동
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = 'https://stdpay.inicis.com/inicis/std/payView.jsp';
-            form.target = '_self';
-
-            const timestamp = Date.now().toString();
-            const signKey = 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+            if (!window.IMP) {
+                showNotification('결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+                return;
+            }
             
-            const formData = {
-                version: '1.0',
-                mid: 'INIpayTest',
-                goodname: packageData.name,
-                oid: merchant_uid,
-                price: packageData.price.toString(),
-                currency: 'WON',
-                buyername: '구매자',
-                buyertel: '01000000000',
-                buyeremail: 'test@example.com',
-                gopaymethod: 'Card',
-                returnUrl: window.location.origin + '/payment/return?returnUrl=' + encodeURIComponent(getReturnUrl()),
-                closeUrl: window.location.origin + '/payment/close?returnUrl=' + encodeURIComponent(getReturnUrl()),
-                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)',
-                timestamp: timestamp,
-                signature: '',
-                mKey: signKey
-            };
-
-            // 서명 생성
-            const hashData = formData.mid + formData.oid + formData.price + signKey;
-            formData.signature = btoa(hashData).substr(0, 32);
-
-            // 폼 필드 생성
-            Object.keys(formData).forEach(key => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = key;
-                input.value = formData[key];
-                form.appendChild(input);
+            window.IMP.request_pay({
+                pg: 'html5_inicis',
+                pay_method: 'card',
+                merchant_uid: merchant_uid,
+                name: packageData.name,
+                amount: packageData.price,
+                buyer_email: 'customer@example.com',
+                buyer_name: '고객',
+                buyer_tel: '010-1234-5678',
+                buyer_addr: '서울특별시 강남구 삼성동',
+                buyer_postcode: '123-456',
+                m_redirect_url: window.location.origin + '/payment/complete?sessionId=' + sessionId + '&returnUrl=' + encodeURIComponent(getReturnUrl())
+            }, function (rsp) {
+                if (rsp.success) {
+                    // PC 결제 성공 시 처리
+                    fetch('/verify-payment', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            imp_uid: rsp.imp_uid,
+                            merchant_uid: rsp.merchant_uid,
+                            sessionId: sessionId,
+                            success: true
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showNotification('결제가 완료되었습니다!');
+                            setTimeout(() => {
+                                const returnUrl = getReturnUrl();
+                                window.location.href = returnUrl;
+                            }, 1000);
+                        } else {
+                            showNotification('결제 검증에 실패했습니다: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('결제 처리 중 오류가 발생했습니다.');
+                    });
+                } else {
+                    showNotification('결제가 취소되었습니다: ' + rsp.error_msg);
+                }
             });
-
-            document.body.appendChild(form);
-            form.submit();
         }
 
 
@@ -900,6 +914,46 @@ app.get('/payment/close', (req, res) => {
   `;
   
   res.send(html);
+});
+
+// Iamport 결제 검증 API (PC용)
+app.post('/verify-payment', async (req, res) => {
+  const { imp_uid, merchant_uid, sessionId, success, error_msg } = req.body;
+
+  console.log('Payment verification received:', {
+    imp_uid, merchant_uid, sessionId, success, error_msg
+  });
+
+  if (!success) {
+    return res.json({
+      success: false,
+      error: error_msg || '결제 실패',
+      redirectUrl: `https://everyunse.com/coins?payment=error&message=payment_cancelled`
+    });
+  }
+
+  // sessionId를 직접 사용하거나 merchant_uid에서 추출
+  let finalSessionId = sessionId;
+  if (!finalSessionId && merchant_uid) {
+    finalSessionId = extractSessionFromOID(merchant_uid);
+  }
+  
+  console.log('Looking for sessionId:', finalSessionId);
+  
+  // 결제 성공 처리
+  const sessionData = {
+    sessionId: finalSessionId,
+    transactionId: imp_uid,
+    status: 'completed'
+  };
+  
+  // 메인 서비스에 웹훅 전송
+  await notifyMainService(sessionData, 'completed');
+  
+  res.json({
+    success: true,
+    redirectUrl: `https://everyunse.com/coins?payment=success`
+  });
 });
 
 // 결제 완료 처리 (모바일 리디렉션)
