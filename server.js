@@ -18,10 +18,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 // KG Inicis 설정
-const INICIS_MID = process.env.INICIS_MID || 'INIpayTest';
-const INICIS_SIGNKEY = process.env.INICIS_SIGNKEY || 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+const INICIS_MID = 'INIpayTest';
+const INICIS_SIGNKEY = 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+const INICIS_API_KEY = 'ItEQKi3rY7uvDS8l';
+const INICIS_API_IV = 'HYb3yQ4f65QL89==';
+const INICIS_CHANNEL_KEY = 'channel-key-bc5e12b1-11b3-4645-9033-1275c22d95cf';
+const INICIS_MOBILE_HASHKEY = '3CB8183A4BE283555ACC8363C0360223';
 const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
+const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
 
 // 헬스체크 엔드포인트
 app.get('/health', (req, res) => {
@@ -48,43 +52,11 @@ async function getCoinPackages() {
 app.get('/', async (req, res) => {
   try {
     const packages = await getCoinPackages();
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, returnUrl } = req.query;
+    const { userId, sessionId, returnTo } = req.query;
     
-    console.log('Received URL parameters:', { sessionId, userId, packageId, amount, coins, bonusCoins, returnUrl });
+    console.log('Payment service accessed with params:', { userId, sessionId, returnTo });
     
-    // URL 파라미터로 받은 데이터를 세션에 저장
-    let sessionData = null;
-    if (sessionId && userId) {
-      // packageId가 없는 경우 - 패키지 선택을 외부에서 하는 경우
-      if (!packageId) {
-        console.log('Creating session for package selection in external service');
-        sessionData = {
-          userId: userId,
-          packageId: null, // 나중에 패키지 선택 시 업데이트
-          returnUrl: returnUrl,
-          timestamp: Date.now()
-        };
-      } else {
-        // packageId가 있는 경우 - 기존 로직
-        console.log('Creating session with specific package selection');
-        sessionData = {
-          userId: userId,
-          packageId: parseInt(packageId),
-          amount: parseFloat(amount),
-          coins: parseInt(coins),
-          bonusCoins: parseInt(bonusCoins) || 0,
-          returnUrl: returnUrl,
-          timestamp: Date.now()
-        };
-      }
-      
-      paymentSessions.set(sessionId, sessionData);
-      console.log('Created session data from URL params:', sessionData);
-    } else {
-      console.log('No sessionId or userId provided, loading coin shop without session');
-    }
-    
-    const html = `
+    res.send(`
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -99,29 +71,30 @@ app.get('/', async (req, res) => {
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f9fafb;
+            font-family: 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            color: #333;
         }
 
         .container {
-            max-width: 448px;
+            max-width: 480px;
             margin: 0 auto;
-            padding-bottom: 80px;
+            background: white;
+            min-height: 100vh;
+            position: relative;
         }
 
-        /* Header */
         .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
             position: sticky;
             top: 0;
-            z-index: 50;
-            background: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            border-bottom: 1px solid #e5e7eb;
+            z-index: 100;
         }
 
         .header-content {
-            padding: 12px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -134,16 +107,17 @@ app.get('/', async (req, res) => {
         }
 
         .back-btn {
-            padding: 4px;
             background: none;
             border: none;
+            color: white;
+            padding: 8px;
+            border-radius: 8px;
             cursor: pointer;
-            border-radius: 6px;
-            transition: background-color 0.2s;
+            transition: background 0.2s;
         }
 
         .back-btn:hover {
-            background-color: #f3f4f6;
+            background: rgba(255, 255, 255, 0.1);
         }
 
         .header-title {
@@ -152,243 +126,193 @@ app.get('/', async (req, res) => {
         }
 
         .coin-balance {
-            background: linear-gradient(135deg, #ffd700, #ffa500);
-            color: white;
+            background: rgba(255, 255, 255, 0.2);
             padding: 8px 12px;
             border-radius: 20px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 500;
         }
 
-        /* Hero Section */
         .hero-section {
-            padding: 16px;
+            padding: 24px 20px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            text-align: center;
         }
 
         .hero-card {
-            background: linear-gradient(135deg, #ffd700, #ffa500);
-            color: white;
-            border-radius: 16px;
-            padding: 24px;
-            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 32px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
             position: relative;
             overflow: hidden;
         }
 
         .hero-icon {
-            width: 64px;
-            height: 64px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 16px;
-            font-size: 32px;
+            font-size: 48px;
+            margin-bottom: 16px;
         }
 
         .hero-title {
-            font-size: 20px;
-            font-weight: bold;
+            font-size: 24px;
+            font-weight: 700;
             margin-bottom: 8px;
         }
 
         .hero-subtitle {
-            font-size: 14px;
+            font-size: 16px;
             opacity: 0.9;
+            line-height: 1.5;
         }
 
         .hero-decoration {
             position: absolute;
-            right: -16px;
-            bottom: -16px;
-            font-size: 64px;
-            opacity: 0.2;
+            top: -20px;
+            right: -20px;
+            font-size: 80px;
+            opacity: 0.1;
         }
 
-        /* Packages Section */
         .packages-section {
-            padding: 0 16px 24px;
+            padding: 32px 20px;
         }
 
         .packages-title {
-            font-size: 18px;
-            font-weight: bold;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 20px;
             color: #1f2937;
-            margin-bottom: 16px;
         }
 
         .packages-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
         }
 
         .package-card {
             background: white;
-            border: 1px solid #e5e7eb;
             border-radius: 16px;
-            padding: 16px;
+            padding: 20px;
             text-align: center;
-            cursor: pointer;
+            border: 2px solid #e5e7eb;
             transition: all 0.3s ease;
+            cursor: pointer;
             position: relative;
             overflow: hidden;
         }
 
         .package-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-4px);
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            border-color: #8b5cf6;
         }
 
         .package-card.popular {
-            border: 2px solid #8b5cf6;
+            border-color: #f59e0b;
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
         }
 
-        .popular-badge {
+        .package-card.popular::before {
+            content: "인기";
             position: absolute;
-            top: -8px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #8b5cf6;
+            top: 8px;
+            right: 8px;
+            background: #f59e0b;
             color: white;
-            padding: 4px 12px;
+            padding: 4px 8px;
             border-radius: 12px;
-            font-size: 12px;
+            font-size: 10px;
             font-weight: 600;
-            z-index: 10;
         }
 
         .package-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 12px;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
+            font-size: 32px;
+            margin-bottom: 12px;
         }
-
-        .package-icon.blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
-        .package-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-        .package-icon.gold { background: linear-gradient(135deg, #f59e0b, #d97706); }
-        .package-icon.rose { background: linear-gradient(135deg, #ec4899, #be185d); }
 
         .package-name {
-            font-weight: bold;
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
             color: #1f2937;
-            margin-bottom: 4px;
-        }
-
-        .package-coins {
-            font-size: 24px;
-            font-weight: bold;
-            color: #8b5cf6;
-            margin-bottom: 4px;
-        }
-
-        .package-coins-label {
-            font-size: 12px;
-            color: #6b7280;
-            margin-bottom: 12px;
-        }
-
-        .package-bonus {
-            font-size: 12px;
-            color: #059669;
-            font-weight: 500;
-            margin-bottom: 12px;
         }
 
         .package-price {
-            font-size: 18px;
-            font-weight: bold;
-            color: #1f2937;
-            margin-bottom: 12px;
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 16px;
         }
 
         .package-btn {
-            width: 100%;
-            padding: 8px 16px;
-            background: #8b5cf6;
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 14px;
+            padding: 12px 20px;
+            border-radius: 12px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            width: 100%;
+            transition: all 0.3s ease;
         }
 
         .package-btn:hover {
-            background: #7c3aed;
-            transform: scale(1.02);
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
         }
 
-        .package-btn.popular {
-            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-        }
-
-        /* Payment Info */
         .payment-info {
-            padding: 0 16px 24px;
+            padding: 0 20px 32px;
         }
 
         .payment-card {
-            background: white;
-            border: 1px solid #e5e7eb;
+            background: #f8fafc;
             border-radius: 16px;
-            padding: 20px;
+            padding: 24px;
+            border: 1px solid #e2e8f0;
         }
 
         .payment-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 16px;
+            gap: 12px;
+            margin-bottom: 20px;
         }
 
         .payment-title {
             font-size: 18px;
             font-weight: 600;
-        }
-
-        .payment-methods {
-            margin-bottom: 16px;
+            color: #1f2937;
         }
 
         .payment-methods h4 {
-            font-weight: 500;
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
             margin-bottom: 12px;
         }
 
         .payment-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
-            font-size: 14px;
         }
 
         .payment-item {
             display: flex;
             align-items: center;
             gap: 8px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: #6b7280;
         }
 
         .check-icon {
             color: #10b981;
-        }
-
-        .security-info {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            border-radius: 8px;
-            padding: 12px;
-            font-size: 14px;
-            color: #166534;
+            font-weight: 600;
         }
 
         .notification {
@@ -432,7 +356,7 @@ app.get('/', async (req, res) => {
             }
         }
     </style>
-    <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
+    <!-- KG 이니시스 결제 Form -->
 </head>
 <body>
     <div class="container">
@@ -497,47 +421,54 @@ app.get('/', async (req, res) => {
                         </div>
                         <div class="payment-item">
                             <span class="check-icon">✓</span>
-                            <span>카카오페이</span>
+                            <span>계좌이체</span>
                         </div>
                         <div class="payment-item">
                             <span class="check-icon">✓</span>
-                            <span>네이버페이</span>
+                            <span>가상계좌</span>
                         </div>
                     </div>
-                </div>
-                
-                <div class="security-info">
-                    <strong>🔒 안전한 결제</strong><br>
-                    모든 결제는 SSL로 암호화되어 안전하게 처리됩니다.
                 </div>
             </div>
         </section>
     </div>
 
-    <div class="notification" id="notification"></div>
+    <!-- Notification -->
+    <div id="notification" class="notification"></div>
 
     <script>
-        // IMP 초기화 (중복 방지)
-        if (!window.IMP) {
-            console.error('IMP library not loaded');
-        } else {
-            window.IMP.init('imp68124036');
-        }
+        // URL 파라미터에서 정보 추출
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('userId') || localStorage.getItem('userId');
+        const sessionId = urlParams.get('sessionId') || Date.now().toString();
+        const returnTo = urlParams.get('returnTo') || 'home';
         
-        const sessionId = new URLSearchParams(window.location.search).get('sessionId');
-        const userId = new URLSearchParams(window.location.search).get('userId');
+        console.log('Payment page loaded with:', { userId, sessionId, returnTo });
         
-        console.log('Session info:', { sessionId, userId });
+        // 로컬 스토리지에 정보 저장
+        if (userId) localStorage.setItem('userId', userId);
+        localStorage.setItem('sessionId', sessionId);
+        localStorage.setItem('returnTo', returnTo);
 
-        function showNotification(message, type = 'success') {
-            const notification = document.getElementById('notification');
-            notification.textContent = message;
-            notification.className = 'notification ' + type;
-            notification.style.display = 'block';
+        function getReturnUrl() {
+            const returnTo = localStorage.getItem('returnTo') || 'home';
             
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, 3000);
+            // 도메인 감지
+            const hostname = window.location.hostname;
+            let baseUrl = 'https://www.everyunse.com';
+            
+            if (hostname.includes('replit.dev')) {
+                baseUrl = 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
+            }
+            
+            const urlMap = {
+                'home': baseUrl + '/',
+                'profile': baseUrl + '/profile',
+                'transactions': baseUrl + '/transactions',
+                'coins': baseUrl + '/coins'
+            };
+            
+            return urlMap[returnTo] || baseUrl + '/';
         }
 
         function goBack() {
@@ -545,20 +476,29 @@ app.get('/', async (req, res) => {
             window.location.href = returnUrl;
         }
 
-        function getReturnUrl() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('returnUrl') || 'https://www.everyunse.com/';
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = \`notification \${type}\`;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
         }
 
-        async function selectPackage(packageData) {
-            console.log('Package selected:', packageData);
-            
-            if (!sessionId || !userId) {
-                showNotification('세션 정보가 없습니다. 다시 시도해주세요.', 'error');
-                return;
-            }
-
+        async function handlePayment(packageData) {
             try {
+                console.log('Starting payment for package:', packageData);
+                
+                if (!userId) {
+                    showNotification('로그인이 필요합니다.', 'error');
+                    setTimeout(() => {
+                        window.location.href = 'https://www.everyunse.com/auth';
+                    }, 1500);
+                    return;
+                }
+
                 // 세션 데이터 업데이트
                 const updateResponse = await fetch('/api/update-session', {
                     method: 'POST',
@@ -567,6 +507,7 @@ app.get('/', async (req, res) => {
                     },
                     body: JSON.stringify({
                         sessionId: sessionId,
+                        userId: userId,
                         packageId: packageData.id,
                         amount: packageData.price,
                         coins: packageData.coins,
@@ -580,77 +521,62 @@ app.get('/', async (req, res) => {
                     return;
                 }
 
-                // KG 이니시스 결제 실행
-                console.log('Starting KG Inicis payment...');
+                // KG 이니시스 Form 기반 결제 실행
+                console.log('Starting KG Inicis form payment...');
                 
-                IMP.request_pay({
-                    pg: 'html5_inicis',
-                    pay_method: 'card',
-                        merchant_uid: 'EveryUnse_' + sessionId + '_' + Date.now(),
-                        name: packageData.name + ' 엽전 충전',
-                        amount: packageData.price,
-                        buyer_email: '',
-                        buyer_name: '엽전 충전',
-                        buyer_tel: '',
-                        buyer_addr: '',
-                        buyer_postcode: '',
-                        custom_data: {
-                            sessionId: sessionId,
-                            userId: userId,
-                            packageId: packageData.id,
-                            coins: packageData.coins,
-                            bonusCoins: packageData.bonusCoins || 0
-                        },
-                        m_redirect_url: window.location.origin + '/payment-complete'
-                    }, function(rsp) {
-                        console.log('Payment response:', rsp);
-                        
-                        if (rsp.success) {
-                            showNotification('결제를 진행합니다...');
-                            
-                            // 결제 검증
-                            fetch('/webhook', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                    imp_uid: rsp.imp_uid,
-                                    merchant_uid: rsp.merchant_uid,
-                                    status: 'paid',
-                                    custom_data: rsp.custom_data
-                                })
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                console.log('Verification response:', data);
-                                if (data.success) {
-                                    showNotification('결제가 완료되었습니다!');
-                                    setTimeout(() => {
-                                        const returnUrl = getReturnUrl();
-                                        window.location.href = returnUrl;
-                                    }, 1500);
-                                } else {
-                                    showNotification('결제 검증 실패', 'error');
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Verification error:', error);
-                                showNotification('결제 검증 중 오류 발생', 'error');
-                            });
-                        } else {
-                            console.log('KG Inicis payment failed:', rsp.error_msg);
-                            console.log('Error code:', rsp.error_code);
-                            
-                            // PG 설정 관련 오류 메시지 개선
-                            let errorMessage = rsp.error_msg;
-                            if (rsp.error_code === 'NOT_READY') {
-                                errorMessage = 'KG 이니시스 PG 설정을 확인해주세요. Iamport 관리자 페이지에서 KG 이니시스가 활성화되어 있는지 확인하세요.';
-                            }
-                            
-                            showNotification('결제 실패: ' + errorMessage, 'error');
-                        }
-                    });
+                const merchantUid = 'EveryUnse_' + sessionId + '_' + Date.now();
+                const timestamp = Date.now();
+                
+                // KG 이니시스 결제 Form 생성 및 제출
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = 'https://stgstdpay.inicis.com/inicis/std/stdpay.jsp';
+                form.style.display = 'none';
+                
+                // 필수 파라미터들
+                const params = {
+                    'version': '1.0',
+                    'mid': 'INIpayTest',
+                    'goodname': packageData.name + ' 엽전 충전',
+                    'oid': merchantUid,
+                    'price': packageData.price,
+                    'currency': 'WON',
+                    'buyername': '엽전충전',
+                    'buyertel': '010-0000-0000',
+                    'buyeremail': 'test@test.com',
+                    'timestamp': timestamp,
+                    'signature': '',
+                    'returnUrl': window.location.origin + '/payment-complete',
+                    'closeUrl': window.location.origin + '/payment-cancel',
+                    'acceptmethod': 'CARD',
+                    'custom_data': JSON.stringify({
+                        sessionId: sessionId,
+                        userId: userId,
+                        packageId: packageData.id,
+                        coins: packageData.coins,
+                        bonusCoins: packageData.bonusCoins || 0
+                    })
+                };
+                
+                // Signature 생성 (간단한 해시)
+                const signData = 'oid=' + merchantUid + '&price=' + packageData.price + '&timestamp=' + timestamp;
+                params.signature = btoa(signData); // Base64 인코딩
+                
+                // Form에 파라미터 추가
+                Object.keys(params).forEach(key => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = params[key];
+                    form.appendChild(input);
+                });
+                
+                document.body.appendChild(form);
+                
+                showNotification('KG 이니시스 결제 페이지로 이동합니다...');
+                
+                // Form 제출
+                form.submit();
                 
             } catch (error) {
                 console.error('Payment error:', error);
@@ -677,79 +603,77 @@ app.get('/', async (req, res) => {
                     return;
                 }
                 
-                packages.forEach((pkg, index) => {
-                    console.log('Processing package:', pkg);
-                    const isPopular = index === 1;
-                    const iconClasses = ['blue', 'purple', 'gold', 'rose'];
-                    const iconClass = iconClasses[index % iconClasses.length];
-                    
-                    const packageElement = document.createElement('div');
-                    packageElement.className = 'package-card ' + (isPopular ? 'popular' : '');
-                    packageElement.innerHTML = 
-                        (isPopular ? '<div class="popular-badge">인기</div>' : '') +
-                        '<div class="package-icon ' + iconClass + '">💰</div>' +
-                        '<h4 class="package-name">' + pkg.name + '</h4>' +
-                        '<div class="package-coins">' + pkg.coins.toLocaleString() + '</div>' +
-                        '<div class="package-coins-label">엽전</div>' +
-                        (pkg.bonusCoins > 0 ? '<div class="package-bonus">+' + pkg.bonusCoins + ' 보너스</div>' : '') +
-                        '<div class="package-price">₩' + parseFloat(pkg.price).toLocaleString() + '</div>' +
-                        '<button class="package-btn ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage({id: ' + pkg.id + ', name: \\'' + pkg.name + '\\', coins: ' + pkg.coins + ', bonusCoins: ' + (pkg.bonusCoins || 0) + ', price: ' + parseFloat(pkg.price) + '})">구매하기</button>';
-                    
-                    container.appendChild(packageElement);
-                    console.log('Package element added:', packageElement);
-                });
+                container.innerHTML = packages.map((pkg, index) => \`
+                    <div class="package-card \${index === 1 ? 'popular' : ''}" onclick="handlePayment(\${JSON.stringify(pkg).replace(/"/g, '&quot;')})">
+                        <div class="package-icon">💰</div>
+                        <div class="package-name">\${pkg.name}</div>
+                        <div class="package-price">₩\${parseFloat(pkg.price).toLocaleString()}</div>
+                        <button class="package-btn">구매하기</button>
+                    </div>
+                \`).join('');
                 
-                console.log('All packages rendered successfully');
-                
+                console.log('Packages rendered successfully');
             } catch (error) {
                 console.error('Error rendering packages:', error);
-                showNotification('패키지 로딩 중 오류가 발생했습니다.', 'error');
+                const container = document.getElementById('packages-container');
+                if (container) {
+                    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #ef4444;">패키지 로딩 중 오류가 발생했습니다.</div>';
+                }
             }
         }
 
-        document.addEventListener('DOMContentLoaded', renderPackages);
+        // 페이지 로드 시 패키지 렌더링
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, rendering packages...');
+            renderPackages();
+        });
     </script>
 </body>
 </html>
-    `;
-    
-    res.send(html);
+    `);
   } catch (error) {
-    console.error('Error loading coin shop:', error);
-    res.status(500).send('서버 오류가 발생했습니다.');
+    console.error('Error serving payment page:', error);
+    res.status(500).send('Internal Server Error');
   }
 });
 
-// 세션 데이터 업데이트 엔드포인트
+// 세션 업데이트 엔드포인트
 app.post('/api/update-session', (req, res) => {
   try {
-    const { sessionId, packageId, amount, coins, bonusCoins } = req.body;
-    console.log('Updating session data:', { sessionId, packageId, amount, coins, bonusCoins });
+    const { sessionId, userId, packageId, amount, coins, bonusCoins } = req.body;
     
-    const sessionData = paymentSessions.get(sessionId);
-    if (sessionData) {
-      sessionData.packageId = packageId;
-      sessionData.amount = amount;
-      sessionData.coins = coins;
-      sessionData.bonusCoins = bonusCoins || 0;
-      paymentSessions.set(sessionId, sessionData);
-      console.log('Session updated successfully:', sessionData);
-      res.json({ success: true });
-    } else {
-      console.log('Session not found for ID:', sessionId);
-      res.status(404).json({ success: false, error: 'Session not found' });
+    console.log('Updating session:', { sessionId, userId, packageId, amount, coins, bonusCoins });
+    
+    if (!sessionId || !userId || !packageId || !amount) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters' });
     }
+    
+    // 세션 데이터 저장
+    paymentSessions.set(sessionId, {
+      sessionId,
+      userId,
+      packageId,
+      amount,
+      coins,
+      bonusCoins: bonusCoins || 0,
+      timestamp: Date.now()
+    });
+    
+    console.log('Session updated successfully');
+    res.json({ success: true });
+    
   } catch (error) {
-    console.error('Error updating session:', error);
+    console.error('Session update error:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
-// OID에서 세션 ID 추출
+// 세션 ID에서 추출하는 함수
 function extractSessionFromOID(oid) {
+  // OID 형식: EveryUnse_sessionId_timestamp
   const parts = oid.split('_');
   if (parts.length >= 2) {
-    return parts[1] + '_' + parts[2];
+    return parts[1]; // sessionId 부분 반환
   }
   return null;
 }
@@ -757,7 +681,8 @@ function extractSessionFromOID(oid) {
 // 메인 서비스에 결제 결과 알림
 async function notifyMainService(sessionData, status) {
   try {
-    const response = await axios.post(`${MAIN_SERVICE_URL}/api/webhook/payment`, {
+    const response = await axios.post(\`\${MAIN_SERVICE_URL}/api/payment/webhook\`, {
+      sessionId: sessionData.sessionId,
       userId: sessionData.userId,
       packageId: sessionData.packageId,
       amount: sessionData.amount,
@@ -767,7 +692,7 @@ async function notifyMainService(sessionData, status) {
       timestamp: Date.now()
     }, {
       headers: {
-        'Authorization': `Bearer ${WEBHOOK_SECRET}`,
+        'Authorization': \`Bearer \${WEBHOOK_SECRET}\`,
         'Content-Type': 'application/json'
       }
     });
@@ -822,53 +747,118 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// 결제 완료 페이지 (모바일 리다이렉트용)
-app.get('/payment-complete', (req, res) => {
-  const { imp_uid, merchant_uid, imp_success } = req.query;
+// KG 이니시스 결제 완료 페이지
+app.post('/payment-complete', async (req, res) => {
+  const { P_STATUS, P_OID, P_AMT, P_TID, P_UNAME } = req.body;
+  console.log('KG Inicis payment complete:', req.body);
   
-  if (imp_success === 'true') {
-    res.send(`
+  // P_OID에서 세션 ID 추출
+  const sessionId = extractSessionFromOID(P_OID);
+  
+  try {
+    if (P_STATUS === '00') { // 결제 성공
+      if (sessionId) {
+        const sessionData = paymentSessions.get(sessionId);
+        if (sessionData) {
+          // 메인 서비스에 결제 완료 알림
+          await notifyMainService(sessionData, 'completed');
+          paymentSessions.delete(sessionId);
+        }
+      }
+      
+      const returnUrl = getReturnUrl();
+      res.send(\`
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>결제 완료</title>
+          </head>
+          <body>
+            <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+              <h2>결제가 완료되었습니다!</h2>
+              <p>잠시 후 자동으로 이동합니다...</p>
+              <script>
+                setTimeout(() => {
+                  window.location.href = '\${returnUrl}';
+                }, 2000);
+              </script>
+            </div>
+          </body>
+        </html>
+      \`);
+    } else {
+      const returnUrl = getReturnUrl();
+      res.send(\`
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>결제 실패</title>
+          </head>
+          <body>
+            <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+              <h2>결제에 실패했습니다</h2>
+              <p>다시 시도해주세요.</p>
+              <script>
+                setTimeout(() => {
+                  window.location.href = '\${returnUrl}';
+                }, 3000);
+              </script>
+            </div>
+          </body>
+        </html>
+      \`);
+    }
+  } catch (error) {
+    console.error('Payment completion error:', error);
+    const returnUrl = getReturnUrl();
+    res.send(\`
       <html>
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>결제 완료</title>
+          <title>결제 오류</title>
         </head>
         <body>
           <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-            <h2>결제가 완료되었습니다!</h2>
-            <p>잠시 후 자동으로 이동합니다...</p>
+            <h2>처리 중 오류가 발생했습니다</h2>
+            <p>잠시 후 다시 시도해주세요.</p>
             <script>
               setTimeout(() => {
-                window.location.href = 'https://www.everyunse.com/';
-              }, 2000);
-            </script>
-          </div>
-        </body>
-      </html>
-    `);
-  } else {
-    res.send(`
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>결제 실패</title>
-        </head>
-        <body>
-          <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-            <h2>결제에 실패했습니다</h2>
-            <p>다시 시도해주세요.</p>
-            <script>
-              setTimeout(() => {
-                window.location.href = 'https://www.everyunse.com/';
+                window.location.href = '\${returnUrl}';
               }, 3000);
             </script>
           </div>
         </body>
       </html>
-    `);
+    \`);
   }
+});
+
+// KG 이니시스 결제 취소 페이지
+app.get('/payment-cancel', (req, res) => {
+  const returnUrl = getReturnUrl();
+  res.send(\`
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>결제 취소</title>
+      </head>
+      <body>
+        <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+          <h2>결제가 취소되었습니다</h2>
+          <p>잠시 후 자동으로 이동합니다...</p>
+          <script>
+            setTimeout(() => {
+              window.location.href = '\${returnUrl}';
+            }, 2000);
+          </script>
+        </div>
+      </body>
+    </html>
+  \`);
 });
 
 // 세션 정보 확인 엔드포인트 (디버깅용)
@@ -884,5 +874,5 @@ app.get('/api/session/:sessionId', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Payment service running on port ${PORT}`);
+  console.log(\`Payment service running on port \${PORT}\`);
 });
