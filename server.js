@@ -125,13 +125,13 @@ app.get('/', async (req, res) => {
         /* Package Grid */
         .packages-section { padding: 16px; }
         .section-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px; }
-        .packages-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; }
+        .packages-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; padding-top: 12px; }
         
-        .package-card { background: white; border-radius: 12px; padding: 16px; text-align: center; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; }
+        .package-card { background: white; border-radius: 12px; padding: 20px 16px 16px; text-align: center; position: relative; overflow: visible; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
         .package-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
         .package-card.popular { border: 2px solid #3b82f6; }
         
-        .popular-badge { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; font-weight: 500; z-index: 10; }
+        .popular-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; font-weight: 500; z-index: 10; white-space: nowrap; }
         
         .package-icon { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; }
         .gradient-blue { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
