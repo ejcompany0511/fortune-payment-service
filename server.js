@@ -50,50 +50,52 @@ function extractSessionFromOID(oid) {
 
 async function notifyMainService(sessionData, status) {
   try {
-    const webhook_url = MAIN_SERVICE_URL + '/api/payment/webhook';
-    console.log('Sending webhook to:', webhook_url);
-    console.log('Webhook data:', sessionData);
-    
-    const response = await axios.post(webhook_url, {
+    const webhookUrl = MAIN_SERVICE_URL + '/api/payment/webhook';
+    const payload = {
       sessionId: sessionData.sessionId,
       userId: sessionData.userId,
       packageId: sessionData.packageId,
       amount: sessionData.amount,
       coins: sessionData.coins,
-      bonusCoins: sessionData.bonusCoins,
+      bonusCoins: sessionData.bonusCoins || 0,
       status: status,
-      timestamp: Date.now()
-    }, {
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('Sending webhook to main service:', webhookUrl);
+    console.log('Webhook payload:', payload);
+
+    const response = await axios.post(webhookUrl, payload, {
       headers: {
         'Authorization': 'Bearer ' + WEBHOOK_SECRET,
         'Content-Type': 'application/json'
       },
       timeout: 10000
     });
-    
+
     console.log('Webhook response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Webhook notification failed:', error.message);
+    console.error('Failed to notify main service:', error.message);
     throw error;
   }
 }
 
-// 메인 결제 페이지
+// 헬스체크
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { sessionId, userId, returnUrl } = req.query;
-    
-    if (!sessionId || !userId) {
-      return res.status(400).send('Missing session or user ID');
-    }
+    const { userId, sessionId, returnTo } = req.query;
 
     const packages = await getCoinPackages();
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
     console.log('Available packages:', packages);
 
-    res.send(\`
-<!DOCTYPE html>
+    res.send(`<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -101,342 +103,64 @@ app.get('/', async (req, res) => {
     <title>엽전 상점 - EveryUnse</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            background: #f9fafb; 
-            min-height: 100vh; 
-            color: #333; 
-        }
-        .container { 
-            max-width: 448px; 
-            margin: 0 auto; 
-            background: #f9fafb; 
-            min-height: 100vh; 
-            position: relative; 
-            padding-bottom: 80px; 
-        }
+        body { font-family: 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9fafb; min-height: 100vh; color: #333; }
+        .container { max-width: 448px; margin: 0 auto; background: #f9fafb; min-height: 100vh; position: relative; padding-bottom: 80px; }
         
         /* Header */
-        .header { 
-            position: sticky; 
-            top: 0; 
-            z-index: 50; 
-            background: white; 
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); 
-            border-bottom: 1px solid #e5e7eb; 
-        }
-        .header-content { 
-            padding: 12px 16px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-        }
-        .header-left { 
-            display: flex; 
-            align-items: center; 
-            gap: 12px; 
-        }
-        .back-btn { 
-            background: none; 
-            border: none; 
-            color: #6b7280; 
-            padding: 8px; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            transition: background 0.2s; 
-        }
-        .back-btn:hover { background: #f3f4f6; }
-        .header-title { 
-            font-size: 18px; 
-            font-weight: 600; 
-            color: #111827; 
-        }
-        .coin-balance { 
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
-            color: white; 
-            padding: 6px 12px; 
-            border-radius: 20px; 
-            font-size: 14px; 
-            font-weight: 600; 
-            display: flex; 
-            align-items: center; 
-            gap: 6px; 
-        }
+        .header { position: sticky; top: 0; z-index: 50; background: white; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border-bottom: 1px solid #e5e7eb; }
+        .header-content { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .back-btn { background: none; border: none; color: #6b7280; padding: 8px; border-radius: 6px; cursor: pointer; }
+        .header-title { font-size: 18px; font-weight: 600; color: #111827; }
+        .balance-info { font-size: 14px; color: #6b7280; }
         
         /* Hero Section */
-        .hero-section { padding: 16px; }
-        .hero-card { 
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
-            color: white; 
-            padding: 24px; 
-            border-radius: 16px; 
-            text-align: center; 
-            position: relative; 
-            overflow: hidden; 
-        }
-        .hero-icon-container { 
-            width: 64px; 
-            height: 64px; 
-            background: rgba(255, 255, 255, 0.2); 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            margin: 0 auto 16px; 
-        }
-        .hero-icon { font-size: 32px; }
-        .hero-title { 
-            font-size: 20px; 
-            font-weight: 700; 
-            margin-bottom: 8px; 
-        }
-        .hero-subtitle { 
-            font-size: 14px; 
-            opacity: 0.9; 
-        }
-        .hero-decoration { 
-            position: absolute; 
-            top: -16px; 
-            right: -16px; 
-            font-size: 96px; 
-            opacity: 0.2; 
-        }
+        .hero { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: white; padding: 24px 16px; text-align: center; position: relative; overflow: hidden; }
+        .hero::before { content: ''; position: absolute; top: -50%; right: -20%; width: 100px; height: 100px; background: rgba(255, 255, 255, 0.1); border-radius: 50%; }
+        .hero-content { position: relative; z-index: 10; }
+        .hero-title { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+        .hero-subtitle { font-size: 14px; opacity: 90%; }
+        .hero-icon { position: absolute; bottom: -16px; right: -16px; font-size: 48px; opacity: 20%; }
         
-        /* Packages Section */
+        /* Package Grid */
         .packages-section { padding: 16px; }
-        .packages-title { 
-            font-size: 18px; 
-            font-weight: 700; 
-            margin-bottom: 16px; 
-            color: #111827; 
-        }
-        .packages-grid { 
-            display: grid; 
-            grid-template-columns: repeat(2, 1fr); 
-            gap: 12px; 
-            margin-bottom: 24px; 
-        }
+        .section-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px; }
+        .packages-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; }
         
-        /* Package Cards */
-        .package-card { 
-            background: white; 
-            border-radius: 16px; 
-            padding: 16px; 
-            text-align: center; 
-            border: 1px solid #e5e7eb; 
-            transition: all 0.3s ease; 
-            cursor: pointer; 
-            position: relative; 
-            overflow: hidden; 
-        }
-        .package-card:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1); 
-        }
-        .package-card.popular { 
-            border: 2px solid #7c3aed; 
-        }
-        .package-popular-badge { 
-            position: absolute; 
-            top: -8px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            background: #7c3aed; 
-            color: white; 
-            padding: 4px 8px; 
-            border-radius: 12px; 
-            font-size: 10px; 
-            font-weight: 600; 
-            z-index: 10; 
-        }
+        .package-card { background: white; border-radius: 12px; padding: 16px; text-align: center; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; }
+        .package-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+        .package-card.popular { border: 2px solid #3b82f6; }
         
-        .package-icon-container { 
-            width: 48px; 
-            height: 48px; 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            margin: 0 auto 12px; 
-        }
-        .korean-gradient-blue { 
-            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); 
-        }
-        .korean-gradient-purple { 
-            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); 
-        }
-        .korean-gradient-gold { 
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
-        }
-        .korean-gradient-rose { 
-            background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%); 
-        }
+        .popular-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 12px; border-radius: 12px; font-weight: 500; }
         
-        .package-icon { 
-            font-size: 24px; 
-            color: white; 
-        }
-        .package-name { 
-            font-weight: 700; 
-            color: #111827; 
-            margin-bottom: 4px; 
-        }
-        .package-coins { 
-            font-size: 24px; 
-            font-weight: 700; 
-            color: #7c3aed; 
-            margin-bottom: 4px; 
-        }
-        .package-coins-label { 
-            font-size: 12px; 
-            color: #6b7280; 
-            margin-bottom: 12px; 
-        }
-        .package-bonus { 
-            font-size: 12px; 
-            color: #059669; 
-            font-weight: 500; 
-            margin-bottom: 12px; 
-        }
-        .package-price { 
-            font-size: 18px; 
-            font-weight: 700; 
-            color: #111827; 
-            margin-bottom: 12px; 
-        }
-        .package-btn { 
-            background: white; 
-            color: #7c3aed; 
-            border: 2px solid #7c3aed; 
-            padding: 8px 16px; 
-            border-radius: 12px; 
-            font-weight: 600; 
-            cursor: pointer; 
-            width: 100%; 
-            transition: all 0.3s ease; 
-        }
-        .package-btn:hover { 
-            background: #7c3aed; 
-            color: white; 
-        }
-        .package-card.popular .package-btn { 
-            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); 
-            color: white; 
-            border: none; 
-        }
+        .package-icon { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; }
+        .gradient-blue { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
+        .gradient-purple { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
+        .gradient-pink { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
+        .gradient-green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .gradient-orange { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+        .gradient-red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+        .gradient-indigo { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); }
         
-        /* Payment Info */
-        .payment-info { padding: 0 16px 24px; }
-        .payment-card { 
-            background: white; 
-            border-radius: 16px; 
-            padding: 24px; 
-            border: 1px solid #e5e7eb; 
-            margin-bottom: 24px; 
-        }
-        .payment-header { 
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
-            margin-bottom: 16px; 
-        }
-        .payment-title { 
-            font-size: 18px; 
-            font-weight: 600; 
-            color: #111827; 
-        }
-        .payment-subtitle { 
-            font-weight: 500; 
-            margin-bottom: 12px; 
-            color: #374151; 
-        }
-        .payment-grid { 
-            display: grid; 
-            grid-template-columns: repeat(2, 1fr); 
-            gap: 8px; 
-        }
-        .payment-item { 
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
-            padding: 8px 0; 
-            font-size: 14px; 
-            color: #6b7280; 
-        }
-        .check-icon { 
-            color: #10b981; 
-            font-weight: 600; 
-        }
+        .package-name { font-size: 16px; font-weight: bold; color: #111827; margin-bottom: 8px; }
+        .package-details { margin-bottom: 12px; }
+        .coins-info { font-size: 14px; color: #6b7280; }
+        .bonus-info { font-size: 12px; color: #059669; margin-top: 2px; }
+        .package-price { font-size: 16px; font-weight: bold; color: #111827; }
+        .original-price { font-size: 12px; color: #9ca3af; text-decoration: line-through; margin-right: 4px; }
         
-        .secure-section { margin-top: 16px; }
-        .secure-list { margin-top: 12px; }
-        .secure-item { 
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
-            padding: 8px 0; 
-            font-size: 14px; 
-            color: #6b7280; 
-        }
-        
-        .notice-box { 
-            padding: 12px; 
-            background: #dbeafe; 
-            border-radius: 12px; 
-            margin-top: 16px; 
-        }
-        .notice-text { 
-            font-size: 12px; 
-            color: #1e40af; 
-        }
+        /* Info Sections */
+        .info-section { background: white; margin: 16px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+        .info-title { font-size: 16px; font-weight: bold; color: #111827; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .info-content { font-size: 14px; color: #6b7280; line-height: 1.6; }
+        .info-list { list-style: none; }
+        .info-list li { padding: 4px 0; position: relative; padding-left: 16px; }
+        .info-list li::before { content: '•'; color: #3b82f6; position: absolute; left: 0; }
         
         /* FAQ */
-        .faq-card { 
-            background: white; 
-            border-radius: 16px; 
-            padding: 24px; 
-            border: 1px solid #e5e7eb; 
-        }
-        .faq-title { 
-            font-size: 18px; 
-            font-weight: 600; 
-            color: #111827; 
-            margin-bottom: 16px; 
-        }
         .faq-item { margin-bottom: 16px; }
-        .faq-question { 
-            font-weight: 500; 
-            margin-bottom: 8px; 
-            color: #374151; 
-        }
-        .faq-answer { 
-            font-size: 14px; 
-            color: #6b7280; 
-            line-height: 1.5; 
-        }
-        
-        .notification { 
-            position: fixed; 
-            top: 20px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            background: #1f2937; 
-            color: white; 
-            padding: 16px 24px; 
-            border-radius: 12px; 
-            display: none; 
-            z-index: 1000; 
-            font-weight: 600; 
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); 
-        }
-        .notification.success { background: #10b981; }
-        .notification.error { background: #ef4444; }
-        
-        @media (max-width: 640px) { 
-            .container { margin: 0; } 
-            .packages-grid { gap: 8px; }
-            .package-card { padding: 12px; }
-        }
+        .faq-question { font-weight: 600; color: #111827; margin-bottom: 4px; }
+        .faq-answer { font-size: 14px; color: #6b7280; }
     </style>
     <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
 </head>
@@ -453,252 +177,214 @@ app.get('/', async (req, res) => {
                     </button>
                     <h1 class="header-title">엽전 상점</h1>
                 </div>
-                <div class="coin-balance">
-                    💰 잔액
-                </div>
+                <div class="balance-info">잔액: 0 엽전</div>
             </div>
         </header>
 
         <!-- Hero Section -->
-        <section class="hero-section">
-            <div class="hero-card">
-                <div class="hero-icon-container">
-                    <div class="hero-icon">💰</div>
-                </div>
-                <h2 class="hero-title">엽전 충전하기</h2>
+        <section class="hero">
+            <div class="hero-content">
+                <h2 class="hero-title">엽전을 충전하세요</h2>
                 <p class="hero-subtitle">더 많은 운세를 확인하려면 엽전이 필요해요</p>
-                <div class="hero-decoration">💰</div>
             </div>
+            <div class="hero-icon">💰</div>
         </section>
 
-        <!-- Coin Packages -->
+        <!-- Packages -->
         <section class="packages-section">
-            <h3 class="packages-title">엽전 패키지</h3>
-            <div class="packages-grid" id="packages-container">
-                <!-- 패키지가 여기에 렌더링됩니다 -->
+            <h3 class="section-title">엽전 패키지</h3>
+            <div class="packages-grid" id="packagesGrid">
+                <!-- 패키지들이 여기에 동적으로 추가됩니다 -->
             </div>
         </section>
 
         <!-- Payment Info -->
-        <section class="payment-info">
-            <div class="payment-card">
-                <div class="payment-header">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                        <line x1="1" y1="10" x2="23" y2="10"/>
-                    </svg>
-                    <h4 class="payment-title">결제 정보</h4>
-                </div>
-                
-                <div class="space-y-4">
-                    <div>
-                        <h4 class="payment-subtitle">지원 결제 수단</h4>
-                        <div class="payment-grid">
-                            <div class="payment-item">
-                                <span class="check-icon">✓</span>
-                                <span>신용카드</span>
-                            </div>
-                            <div class="payment-item">
-                                <span class="check-icon">✓</span>
-                                <span>체크카드</span>
-                            </div>
-                            <div class="payment-item">
-                                <span class="check-icon">✓</span>
-                                <span>계좌이체</span>
-                            </div>
-                            <div class="payment-item">
-                                <span class="check-icon">✓</span>
-                                <span>카카오페이</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="secure-section">
-                        <h4 class="payment-subtitle">안전한 결제</h4>
-                        <div class="secure-list">
-                            <div class="secure-item">
-                                <span class="check-icon">✓</span>
-                                <span>SSL 암호화 보안</span>
-                            </div>
-                            <div class="secure-item">
-                                <span class="check-icon">✓</span>
-                                <span>카드정보 미저장</span>
-                            </div>
-                            <div class="secure-item">
-                                <span class="check-icon">✓</span>
-                                <span>PG사 안전결제</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="notice-box">
-                        <p class="notice-text">
-                            결제 완료 후 즉시 엽전이 충전됩니다. 
-                            문제가 발생하면 고객센터로 문의해주세요.
-                        </p>
-                    </div>
-                </div>
+        <section class="info-section">
+            <h4 class="info-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                지원 결제수단
+            </h4>
+            <div class="info-content">
+                <ul class="info-list">
+                    <li>신용카드 (국내 모든 카드사)</li>
+                    <li>계좌이체</li>
+                    <li>휴대폰 소액결제</li>
+                    <li>카카오페이, 네이버페이</li>
+                </ul>
             </div>
-            
-            <!-- FAQ -->
-            <div class="faq-card">
-                <h4 class="faq-title">자주 묻는 질문</h4>
-                
+        </section>
+
+        <!-- Security Info -->
+        <section class="info-section">
+            <h4 class="info-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <circle cx="12" cy="16" r="1"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                안전한 결제
+            </h4>
+            <div class="info-content">
+                <ul class="info-list">
+                    <li>SSL 보안인증서 적용</li>
+                    <li>KG이니시스 안전결제 시스템</li>
+                    <li>개인정보 암호화 처리</li>
+                    <li>PCI DSS 인증 완료</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="info-section">
+            <h4 class="info-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                    <point cx="12" cy="17"/>
+                </svg>
+                자주 묻는 질문
+            </h4>
+            <div class="info-content">
                 <div class="faq-item">
-                    <h5 class="faq-question">Q. 결제 후 엽전이 언제 충전되나요?</h5>
-                    <p class="faq-answer">결제 완료 즉시 자동으로 충전됩니다.</p>
+                    <div class="faq-question">Q. 엽전 사용 기간이 있나요?</div>
+                    <div class="faq-answer">A. 엽전은 무기한 사용 가능하며, 만료되지 않습니다.</div>
                 </div>
-                
                 <div class="faq-item">
-                    <h5 class="faq-question">Q. 환불이 가능한가요?</h5>
-                    <p class="faq-answer">엽전 사용 전이라면 환불 신청이 가능합니다.</p>
+                    <div class="faq-question">Q. 결제 후 엽전이 바로 충전되나요?</div>
+                    <div class="faq-answer">A. 결제 완료 즉시 엽전이 자동으로 충전됩니다.</div>
                 </div>
-                
                 <div class="faq-item">
-                    <h5 class="faq-question">Q. 결제 오류가 발생했어요</h5>
-                    <p class="faq-answer">브라우저를 새로고침하거나 고객센터로 문의해주세요.</p>
+                    <div class="faq-question">Q. 환불이 가능한가요?</div>
+                    <div class="faq-answer">A. 엽전 사용 전에는 환불이 가능하며, 고객센터로 문의해주세요.</div>
                 </div>
             </div>
         </section>
     </div>
 
-    <div class="notification" id="notification"></div>
-
     <script>
-        var IMP = window.IMP;
-        IMP.init('\${IAMPORT_IMP_CODE}');
-        
-        var sessionId = '\${sessionId}';
-        var userId = '\${userId}';
-        var returnUrl = '\${returnUrl || getReturnUrl()}';
+        const sessionData = {
+            userId: '${userId || ''}',
+            sessionId: '${sessionId || ''}',
+            returnTo: '${returnTo || ''}'
+        };
 
-        function goBack() {
-            if (returnUrl) {
-                window.location.href = returnUrl;
-            } else {
-                window.history.back();
+        const packages = ${JSON.stringify(packages)};
+
+        function getGradientClass(index) {
+            const gradients = ['gradient-blue', 'gradient-purple', 'gradient-pink', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-indigo'];
+            return gradients[index % gradients.length];
+        }
+
+        function formatPrice(price) {
+            return new Intl.NumberFormat('ko-KR').format(parseFloat(price));
+        }
+
+        function renderPackages() {
+            const grid = document.getElementById('packagesGrid');
+            if (!grid || !packages) return;
+
+            grid.innerHTML = packages.map((pkg, index) => {
+                const isPopular = pkg.isPopular || pkg.is_popular;
+                const discountPercent = pkg.discountPercent || pkg.discount_percent || 0;
+                const originalPrice = discountPercent > 0 ? Math.round(parseFloat(pkg.price) / (1 - discountPercent / 100)) : null;
+                
+                return \`
+                    <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
+                        \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
+                        <div class="package-icon \${getGradientClass(index)}">💰</div>
+                        <div class="package-name">\${pkg.name}</div>
+                        <div class="package-details">
+                            <div class="coins-info">\${pkg.coins}엽전</div>
+                            \${pkg.bonusCoins > 0 ? \`<div class="bonus-info">보너스 +\${pkg.bonusCoins}엽전</div>\` : ''}
+                        </div>
+                        <div class="package-price">
+                            \${originalPrice ? \`<span class="original-price">₩\${formatPrice(originalPrice)}</span>\` : ''}
+                            ₩\${formatPrice(pkg.price)}
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+        }
+
+        function selectPackage(packageId) {
+            const selectedPackage = packages.find(p => p.id === packageId);
+            if (!selectedPackage) return;
+
+            console.log('Selected package:', selectedPackage);
+            
+            if (!sessionData.userId || !sessionData.sessionId) {
+                alert('세션 정보가 없습니다. 다시 시도해주세요.');
+                return;
             }
-        }
 
-        function showNotification(message, type) {
-            var notification = document.getElementById('notification');
-            notification.textContent = message;
-            notification.className = 'notification ' + (type || 'success');
-            notification.style.display = 'block';
-            
-            setTimeout(function() {
-                notification.style.display = 'none';
-            }, 3000);
-        }
+            const IMP = window.IMP;
+            IMP.init('${IAMPORT_IMP_CODE}');
 
-        function handlePayment(packageData) {
-            console.log('Starting payment for package:', packageData);
-            
-            var merchantUid = 'payment_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
             IMP.request_pay({
                 pg: 'html5_inicis',
                 pay_method: 'card',
                 merchant_uid: merchantUid,
-                name: packageData.name + ' 엽전 충전',
-                amount: packageData.price,
-                buyer_email: 'test@test.com',
-                buyer_name: '엽전충전',
-                buyer_tel: '010-0000-0000',
+                name: selectedPackage.name,
+                amount: selectedPackage.price,
+                buyer_email: '',
+                buyer_name: 'EveryUnse User',
+                buyer_tel: '',
+                buyer_addr: '',
+                buyer_postcode: '',
                 custom_data: {
-                    sessionId: sessionId,
-                    userId: userId,
-                    packageId: packageData.id,
-                    coins: packageData.coins,
-                    bonusCoins: packageData.bonusCoins || 0
+                    sessionId: sessionData.sessionId,
+                    userId: sessionData.userId,
+                    packageId: selectedPackage.id,
+                    coins: selectedPackage.coins,
+                    bonusCoins: selectedPackage.bonusCoins || 0
                 }
             }, function(rsp) {
                 if (rsp.success) {
-                    console.log('Payment success:', rsp);
-                    handlePaymentSuccess(rsp, packageData);
+                    console.log('Payment successful:', rsp);
+                    
+                    fetch('/webhook', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sessionId: sessionData.sessionId,
+                            userId: sessionData.userId,
+                            packageId: selectedPackage.id,
+                            amount: selectedPackage.price,
+                            coins: selectedPackage.coins,
+                            bonusCoins: selectedPackage.bonusCoins || 0,
+                            status: 'completed',
+                            transactionId: rsp.imp_uid,
+                            merchantUid: rsp.merchant_uid
+                        })
+                    }).then(response => response.json())
+                      .then(result => {
+                          console.log('Webhook result:', result);
+                          if (result.success) {
+                              alert('결제가 완료되었습니다!');
+                              window.location.href = '${getReturnUrl()}' + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                          }
+                      });
                 } else {
-                    console.log('Payment failed:', rsp.error_msg);
-                    showNotification('결제가 실패했습니다: ' + rsp.error_msg, 'error');
+                    console.log('Payment failed:', rsp);
+                    alert('결제에 실패했습니다: ' + rsp.error_msg);
                 }
             });
         }
 
-        function handlePaymentSuccess(rsp, packageData) {
-            fetch('/webhook', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    imp_uid: rsp.imp_uid,
-                    merchant_uid: rsp.merchant_uid,
-                    status: 'paid',
-                    sessionId: sessionId,
-                    userId: userId,
-                    packageId: packageData.id,
-                    coins: packageData.coins,
-                    bonusCoins: packageData.bonusCoins || 0,
-                    amount: packageData.price
-                })
-            })
-            .then(function(response) { return response.json(); })
-            .then(function(result) {
-                if (result.success) {
-                    showNotification('결제가 완료되었습니다!');
-                    setTimeout(function() {
-                        window.location.href = returnUrl;
-                    }, 2000);
-                } else {
-                    showNotification('결제 처리 중 오류가 발생했습니다.', 'error');
-                }
-            })
-            .catch(function(error) {
-                console.error('Webhook error:', error);
-                showNotification('결제 확인 중 오류가 발생했습니다.', 'error');
-            });
-        }
-
-        function renderPackages() {
-            var packages = \${JSON.stringify(packages)};
-            var container = document.getElementById('packages-container');
-            
-            if (!packages || packages.length === 0) {
-                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #6b7280;">패키지 정보를 불러올 수 없습니다.</div>';
-                return;
-            }
-            
-            var gradients = ['korean-gradient-blue', 'korean-gradient-purple', 'korean-gradient-gold', 'korean-gradient-rose'];
-            
-            var html = '';
-            for (var i = 0; i < packages.length; i++) {
-                var pkg = packages[i];
-                var gradient = gradients[i % gradients.length];
-                var isPopular = pkg.isPopular || i === 1;
-                
-                html += '<div class="package-card ' + (isPopular ? 'popular' : '') + '" onclick="handlePayment(' + JSON.stringify(pkg).replace(/"/g, '&quot;') + ')">';
-                if (isPopular) {
-                    html += '<div class="package-popular-badge">인기</div>';
-                }
-                html += '<div class="package-icon-container ' + gradient + '">';
-                html += '<div class="package-icon">💰</div>';
-                html += '</div>';
-                html += '<h4 class="package-name">' + pkg.name + '</h4>';
-                html += '<div class="package-coins">' + pkg.coins.toLocaleString() + '</div>';
-                html += '<div class="package-coins-label">엽전</div>';
-                if (pkg.bonusCoins > 0) {
-                    html += '<div class="package-bonus">+' + pkg.bonusCoins + ' 보너스</div>';
-                }
-                html += '<div class="package-price">₩' + parseInt(pkg.price).toLocaleString() + '</div>';
-                html += '<button class="package-btn">' + (isPopular ? '구매하기' : '구매하기') + '</button>';
-                html += '</div>';
-            }
-            
-            container.innerHTML = html;
+        function goBack() {
+            window.location.href = '${getReturnUrl()}' + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
         }
 
         document.addEventListener('DOMContentLoaded', renderPackages);
     </script>
 </body>
-</html>
-    \`);
+</html>`);
   } catch (error) {
     console.error('Error serving payment page:', error);
     res.status(500).send('Internal Server Error');
