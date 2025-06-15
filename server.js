@@ -44,10 +44,37 @@ async function getCoinPackages() {
   }
 }
 
+// 결제 생성 API (메인 서버에서 호출)
+app.post('/api/create-payment', async (req, res) => {
+  try {
+    const { amount, coins, userId, packageId, sessionId } = req.body;
+    console.log('Payment creation request:', { amount, coins, userId, packageId, sessionId });
+    
+    // 결제 세션을 메모리에 저장
+    paymentSessions.set(sessionId, {
+      userId,
+      packageId,
+      amount,
+      coins,
+      timestamp: Date.now()
+    });
+    
+    res.json({
+      success: true,
+      sessionId: sessionId,
+      redirectUrl: `${req.protocol}://${req.get('host')}/?sessionId=${sessionId}&returnUrl=${encodeURIComponent(req.body.returnUrl || 'https://everyunse.com')}`
+    });
+  } catch (error) {
+    console.error('Error creating payment:', error);
+    res.status(500).json({ error: 'Failed to create payment' });
+  }
+});
+
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
     const packages = await getCoinPackages();
+    const sessionId = req.query.sessionId;
     
     const html = `
 <!DOCTYPE html>
@@ -404,8 +431,12 @@ app.get('/', async (req, res) => {
             showNotification('결제를 준비하고 있습니다...');
 
             try {
-                const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                // URL에서 sessionId 가져오기 (메인 서버에서 전달된 값)
+                const urlParams = new URLSearchParams(window.location.search);
+                const sessionId = urlParams.get('sessionId') || 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 const merchant_uid = 'ORDER_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                
+                console.log('Using sessionId from URL:', sessionId);
                 
                 initializePayment(selectedPackage, sessionId, merchant_uid);
                 
