@@ -517,8 +517,12 @@ app.get('/', async (req, res) => {
     <div class="notification" id="notification"></div>
 
     <script>
-        const IMP = window.IMP;
-        IMP.init('imp68124036');
+        // IMP 초기화 (중복 방지)
+        if (!window.IMP) {
+            console.error('IMP library not loaded');
+        } else {
+            window.IMP.init('imp68124036');
+        }
         
         const sessionId = new URLSearchParams(window.location.search).get('sessionId');
         const userId = new URLSearchParams(window.location.search).get('userId');
