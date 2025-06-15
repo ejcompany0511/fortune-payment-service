@@ -17,7 +17,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 // 설정
-const IAMPORT_IMP_CODE = 'imp55863830';
+const IAMPORT_IMP_CODE = 'imp25772872';
 const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
 
