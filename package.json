@@ -1,7 +1,7 @@
 {
   "name": "fortune-payment-service",
-  "version": "1.3.0",
-  "description": "External payment service for EveryUnse fortune-telling platform",
+  "version": "1.4.0",
+  "description": "External payment service for fortune telling platform with real-time pricing",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,7 +10,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "body-parser": "^1.20.2"
+    "body-parser": "^1.20.2",
+    "axios": "^1.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
