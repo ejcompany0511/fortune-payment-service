@@ -44,45 +44,32 @@ async function getCoinPackages() {
   }
 }
 
-// 결제 생성 API (메인 서버에서 호출)
-app.post('/api/create-payment', async (req, res) => {
-  try {
-    const { amount, coins, userId, packageId, sessionId } = req.body;
-    console.log('Payment creation request:', { amount, coins, userId, packageId, sessionId });
-    
-    // 결제 세션을 메모리에 저장
-    paymentSessions.set(sessionId, {
-      userId,
-      packageId,
-      amount,
-      coins,
-      timestamp: Date.now()
-    });
-    
-    console.log('Stored payment session:', sessionId, { userId, packageId, amount, coins });
-    
-    res.json({
-      success: true,
-      sessionId: sessionId,
-      redirectUrl: `${req.protocol}://${req.get('host')}/?sessionId=${sessionId}&returnUrl=${encodeURIComponent(req.body.returnUrl || 'https://everyunse.com')}`
-    });
-  } catch (error) {
-    console.error('Error creating payment:', error);
-    res.status(500).json({ error: 'Failed to create payment' });
-  }
-});
+
 
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
     const packages = await getCoinPackages();
-    const sessionId = req.query.sessionId;
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, returnUrl } = req.query;
     
-    // URL에서 sessionId 확인하여 세션 데이터 가져오기
+    // URL 파라미터로 받은 데이터를 세션에 저장
     let sessionData = null;
-    if (sessionId) {
-      sessionData = paymentSessions.get(sessionId);
-      console.log('Retrieved session data for page load:', sessionData);
+    if (sessionId && userId && packageId) {
+      sessionData = {
+        userId: userId,
+        packageId: parseInt(packageId),
+        amount: parseFloat(amount),
+        coins: parseInt(coins),
+        bonusCoins: parseInt(bonusCoins) || 0,
+        returnUrl: returnUrl,
+        timestamp: Date.now()
+      };
+      
+      paymentSessions.set(sessionId, sessionData);
+      console.log('Created session data from URL params:', sessionData);
+      console.log('All stored sessions:', Array.from(paymentSessions.keys()));
+    } else {
+      console.log('Missing required URL parameters:', { sessionId, userId, packageId, amount, coins });
     }
 
     const html = `
@@ -613,9 +600,9 @@ app.post('/verify-payment', async (req, res) => {
       transactionId: imp_uid,
       merchantUid: merchant_uid,
       status: 'completed',
-      amount: sessionData?.amount || req.body.amount || 0,
-      coins: sessionData?.coins || req.body.coins || 0,
-      bonusCoins: req.body.bonusCoins || 0,
+      amount: sessionData?.amount || 0,
+      coins: sessionData?.coins || 0,
+      bonusCoins: sessionData?.bonusCoins || 0,
       userId: sessionData?.userId,
       packageId: sessionData?.packageId
     };
