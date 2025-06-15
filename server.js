@@ -131,7 +131,7 @@ app.get('/', async (req, res) => {
         .package-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
         .package-card.popular { border: 2px solid #3b82f6; }
         
-        .popular-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 12px; border-radius: 12px; font-weight: 500; }
+        .popular-badge { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; font-weight: 500; z-index: 10; }
         
         .package-icon { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; }
         .gradient-blue { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
@@ -289,8 +289,6 @@ app.get('/', async (req, res) => {
 
             grid.innerHTML = packages.map((pkg, index) => {
                 const isPopular = pkg.isPopular || pkg.is_popular;
-                const discountPercent = pkg.discountPercent || pkg.discount_percent || 0;
-                const originalPrice = discountPercent > 0 ? Math.round(parseFloat(pkg.price) / (1 - discountPercent / 100)) : null;
                 
                 return \`
                     <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
@@ -302,7 +300,6 @@ app.get('/', async (req, res) => {
                             \${pkg.bonusCoins > 0 ? \`<div class="bonus-info">보너스 +\${pkg.bonusCoins}엽전</div>\` : ''}
                         </div>
                         <div class="package-price">
-                            \${originalPrice ? \`<span class="original-price">₩\${formatPrice(originalPrice)}</span>\` : ''}
                             ₩\${formatPrice(pkg.price)}
                         </div>
                     </div>
