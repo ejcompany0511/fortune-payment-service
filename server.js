@@ -454,32 +454,43 @@ app.get('/', async (req, res) => {
 
         // 결제 요청
         function requestPayment(packageData, sessionId, merchant_uid) {
+            const timestamp = Date.now().toString();
+            const signKey = 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS';
+            
+            // 서명 생성
+            const hashData = 'INIpayTest' + merchant_uid + packageData.price + signKey;
+            const signature = btoa(hashData).substr(0, 32);
+
             const paymentData = {
-                mid: 'INIpayTest', // 테스트용 MID
+                mid: 'INIpayTest',
                 oid: merchant_uid,
-                price: packageData.price,
-                timestamp: Date.now(),
-                signature: generateSignature(merchant_uid, packageData.price),
-                mKey: 'SU5JTElURV9UUklQTEVERVNfS0VZU1RS',
+                price: packageData.price.toString(),
+                timestamp: timestamp,
+                signature: signature,
+                mKey: signKey,
                 currency: 'WON',
                 goodname: packageData.name,
                 buyername: '구매자',
-                buyertel: '010-0000-0000',
+                buyertel: '01000000000',
                 buyeremail: 'test@example.com',
                 returnUrl: window.location.origin + '/payment/return',
                 closeUrl: window.location.origin + '/payment/close',
-                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)'
+                acceptmethod: 'HPP(1):no_bankbook:centerCd(Y)',
+                popupYn: 'Y'
             };
 
+            console.log('Payment data:', paymentData);
+
             // KG Inicis 결제창 호출
-            INIStdPay.pay(paymentData);
+            try {
+                INIStdPay.pay(paymentData);
+            } catch (error) {
+                console.error('Payment error:', error);
+                showNotification('결제 초기화 중 오류가 발생했습니다.');
+            }
         }
 
-        // 서명 생성 (간단한 버전)
-        function generateSignature(oid, price) {
-            const timestamp = Date.now();
-            return btoa(oid + price + timestamp).substr(0, 32);
-        }
+
 
         // 뒤로 가기
         function goBack() {
