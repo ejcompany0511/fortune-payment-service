@@ -251,7 +251,7 @@ app.get('/', async (req, res) => {
             <div class="info-content">
                 <div class="faq-item">
                     <div class="faq-question">Q. 엽전 사용 기간이 있나요?</div>
-                    <div class="faq-answer">A. 엽전은 무기한 사용 가능하며, 만료되지 않습니다.</div>
+                    <div class="faq-answer">A. 엽전은 획득일로부터 1년간 사용 가능합니다.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-question">Q. 결제 후 엽전이 바로 충전되나요?</div>
