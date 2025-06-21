@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const paymentSessions = new Map();
 
 app.use(cors({
-  origin: ['https://www.everyunse.com', 'https://everyunse.com', 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev'],
+  origin: ['https://7d28fc97-413e-42c8-bb21-20740ab44c32-00-33dy5akz0403h.riker.replit.dev', 'https://www.Teacherunse.replit.app', 'https://Teacherunse.replit.app'],
   credentials: true
 }));
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -18,11 +18,11 @@ app.use(bodyParser.json());
 
 // 설정
 const IAMPORT_IMP_CODE = 'imp25772872';
-const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
+const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://7d28fc97-413e-42c8-bb21-20740ab44c32-00-33dy5akz0403h.riker.replit.dev';
 const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
 
 function getReturnUrl() {
-  const hostname = process.env.NODE_ENV === 'production' ? 'www.everyunse.com' : '4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
+  const hostname = process.env.NODE_ENV === 'production' ? 'www.teacherunse.replit.app' : '7d28fc97-413e-42c8-bb21-20740ab44c32-00-33dy5akz0403h.riker.replit.dev';
   return 'https://' + hostname + '/';
 }
 
@@ -48,10 +48,16 @@ function extractSessionFromOID(oid) {
   return oid;
 }
 
+// 플랫폼별 결제 완료 알림
 async function notifyMainService(sessionData, status) {
   try {
-    const webhookUrl = MAIN_SERVICE_URL + '/api/payment/webhook';
-    const payload = {
+    // 세션 데이터에서 웹훅 URL 가져오기 (플랫폼별 대응)
+    const webhookUrl = sessionData.webhookUrl || `${MAIN_SERVICE_URL}/api/payment/webhook`;
+    console.log('Sending webhook to platform:', sessionData.platform || 'default');
+    console.log('Webhook URL:', webhookUrl);
+    console.log('Session data for webhook:', sessionData);
+
+    const webhookPayload = {
       sessionId: sessionData.sessionId,
       userId: sessionData.userId,
       packageId: sessionData.packageId,
@@ -59,27 +65,25 @@ async function notifyMainService(sessionData, status) {
       coins: sessionData.coins,
       bonusCoins: sessionData.bonusCoins || 0,
       status: status,
-      timestamp: new Date().toISOString()
+      platform: sessionData.platform || 'default',
+      timestamp: Date.now()
     };
 
-    console.log('Sending webhook to main service:', webhookUrl);
-    console.log('Webhook payload:', payload);
-
-    const response = await axios.post(webhookUrl, payload, {
+    const response = await axios.post(webhookUrl, webhookPayload, {
       headers: {
-        'Authorization': 'Bearer ' + WEBHOOK_SECRET,
+        'Authorization': `Bearer ${WEBHOOK_SECRET}`,
         'Content-Type': 'application/json'
       },
-      timeout: 10000
+      timeout: 10000 // 10초 타임아웃
     });
 
-    console.log('Webhook response:', response.data);
+    console.log('Webhook response:', response.status, response.data);
     return response.data;
   } catch (error) {
-    console.error('Failed to notify main service:', error.message);
-    throw error;
-  }
-}
+    console.error('Failed to notify platform service:', error.message);
+    if (error.response) {
+      console.error('Error response:', error.response.status, error.response.data);
+    }
 
 // 헬스체크
 app.get('/health', (req, res) => {
@@ -89,11 +93,44 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo } = req.query;
+    const { userId, sessionId, returnUrl, platform, webhookUrl, packageId, amount, coins, bonusCoins } = req.query;
 
     const packages = await getCoinPackages();
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
+    console.log('Platform:', platform, 'Webhook URL:', webhookUrl);
     console.log('Available packages:', packages);
+
+    // URL 파라미터로 받은 데이터를 세션에 저장
+    let sessionData = null;
+    if (sessionId && userId) {
+      if (!packageId) {
+        // 패키지 선택을 외부에서 하는 경우
+        sessionData = {
+          userId: userId,
+          packageId: null,
+          returnUrl: returnUrl,
+          platform: platform || 'default',
+          webhookUrl: webhookUrl || MAIN_SERVICE_URL + '/api/payment/webhook',
+          timestamp: Date.now()
+        };
+      } else {
+        // packageId가 있는 경우
+        sessionData = {
+          userId: userId,
+          packageId: parseInt(packageId),
+          amount: parseFloat(amount),
+          coins: parseInt(coins),
+          bonusCoins: parseInt(bonusCoins) || 0,
+          returnUrl: returnUrl,
+          platform: platform || 'default',
+          webhookUrl: webhookUrl || MAIN_SERVICE_URL + '/api/payment/webhook',
+          timestamp: Date.now()
+        };
+      }
+
+      paymentSessions.set(sessionId, sessionData);
+      console.log('Created session data from URL params:', sessionData);
+    }
 
     res.send(`<!DOCTYPE html>
 <html lang="ko">
@@ -105,7 +142,7 @@ app.get('/', async (req, res) => {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9fafb; min-height: 100vh; color: #333; }
         .container { max-width: 448px; margin: 0 auto; background: #f9fafb; min-height: 100vh; position: relative; padding-bottom: 80px; }
-        
+
         /* Header */
         .header { position: sticky; top: 0; z-index: 50; background: white; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border-bottom: 1px solid #e5e7eb; }
         .header-content { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
@@ -113,7 +150,7 @@ app.get('/', async (req, res) => {
         .back-btn { background: none; border: none; color: #6b7280; padding: 8px; border-radius: 6px; cursor: pointer; }
         .header-title { font-size: 18px; font-weight: 600; color: #111827; }
         .balance-info { font-size: 14px; color: #6b7280; }
-        
+
         /* Hero Section */
         .hero { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: white; padding: 24px 16px; text-align: center; position: relative; overflow: hidden; }
         .hero::before { content: ''; position: absolute; top: -50%; right: -20%; width: 100px; height: 100px; background: rgba(255, 255, 255, 0.1); border-radius: 50%; }
@@ -121,18 +158,18 @@ app.get('/', async (req, res) => {
         .hero-title { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
         .hero-subtitle { font-size: 14px; opacity: 90%; }
         .hero-icon { position: absolute; bottom: -16px; right: -16px; font-size: 48px; opacity: 20%; }
-        
+
         /* Package Grid */
         .packages-section { padding: 16px; }
         .section-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px; }
         .packages-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; padding-top: 12px; }
-        
+
         .package-card { background: white; border-radius: 12px; padding: 20px 16px 16px; text-align: center; position: relative; overflow: visible; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
         .package-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
         .package-card.popular { border: 2px solid #3b82f6; }
-        
+
         .popular-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; font-weight: 500; z-index: 10; white-space: nowrap; }
-        
+
         .package-icon { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; }
         .gradient-blue { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
         .gradient-purple { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
@@ -141,14 +178,14 @@ app.get('/', async (req, res) => {
         .gradient-orange { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
         .gradient-red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
         .gradient-indigo { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); }
-        
+
         .package-name { font-size: 16px; font-weight: bold; color: #111827; margin-bottom: 8px; }
         .package-details { margin-bottom: 12px; }
         .coins-info { font-size: 14px; color: #6b7280; }
         .bonus-info { font-size: 12px; color: #059669; margin-top: 2px; }
         .package-price { font-size: 16px; font-weight: bold; color: #111827; }
         .original-price { font-size: 12px; color: #9ca3af; text-decoration: line-through; margin-right: 4px; }
-        
+
         /* Info Sections */
         .info-section { background: white; margin: 16px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
         .info-title { font-size: 16px; font-weight: bold; color: #111827; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
@@ -156,7 +193,7 @@ app.get('/', async (req, res) => {
         .info-list { list-style: none; }
         .info-list li { padding: 4px 0; position: relative; padding-left: 16px; }
         .info-list li::before { content: '•'; color: #3b82f6; position: absolute; left: 0; }
-        
+
         /* FAQ */
         .faq-item { margin-bottom: 16px; }
         .faq-question { font-weight: 600; color: #111827; margin-bottom: 4px; }
@@ -289,7 +326,7 @@ app.get('/', async (req, res) => {
 
             grid.innerHTML = packages.map((pkg, index) => {
                 const isPopular = pkg.isPopular || pkg.is_popular;
-                
+
                 return \`
                     <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
                         \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
@@ -312,7 +349,7 @@ app.get('/', async (req, res) => {
             if (!selectedPackage) return;
 
             console.log('Selected package:', selectedPackage);
-            
+
             if (!sessionData.userId || !sessionData.sessionId) {
                 alert('세션 정보가 없습니다. 다시 시도해주세요.');
                 return;
@@ -322,7 +359,7 @@ app.get('/', async (req, res) => {
             IMP.init('${IAMPORT_IMP_CODE}');
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
-            
+
             IMP.request_pay({
                 pg: 'html5_inicis',
                 pay_method: 'card',
@@ -344,7 +381,7 @@ app.get('/', async (req, res) => {
             }, function(rsp) {
                 if (rsp.success) {
                     console.log('Payment successful:', rsp);
-                    
+
                     fetch('/webhook', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -388,13 +425,149 @@ app.get('/', async (req, res) => {
   }
 });
 
+// 패키지 선택 시 세션 업데이트
+app.post('/api/update-session', (req, res) => {
+  try {
+    const { sessionId, packageId } = req.body;
+    
+    if (!sessionId || !packageId) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters' });
+    }
+
+    const sessionData = paymentSessions.get(sessionId);
+    if (!sessionData) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    // 패키지 정보로 세션 업데이트
+    const packages = [
+      { id: 1, name: "3,000엽전", coins: 3000, bonusCoins: 0, price: 3000 },
+      { id: 2, name: "7,500엽전", coins: 7500, bonusCoins: 1500, price: 7500 },
+      { id: 3, name: "15,000엽전", coins: 15000, bonusCoins: 4500, price: 15000 },
+      { id: 4, name: "30,000엽전", coins: 30000, bonusCoins: 12000, price: 30000 },
+      { id: 5, name: "75,000엽전", coins: 75000, bonusCoins: 37500, price: 75000 },
+      { id: 6, name: "150,000엽전", coins: 150000, bonusCoins: 90000, price: 150000 },
+      { id: 7, name: "300,000엽전", coins: 300000, bonusCoins: 210000, price: 300000 }
+    ];
+
+    const selectedPackage = packages.find(p => p.id === parseInt(packageId));
+    if (!selectedPackage) {
+      return res.status(400).json({ success: false, error: 'Invalid package ID' });
+    }
+
+    // 세션 데이터 업데이트
+    sessionData.packageId = selectedPackage.id;
+    sessionData.amount = selectedPackage.price;
+    sessionData.coins = selectedPackage.coins;
+    sessionData.bonusCoins = selectedPackage.bonusCoins;
+    sessionData.packageName = selectedPackage.name;
+
+    paymentSessions.set(sessionId, sessionData);
+    
+    console.log('Updated session data:', sessionData);
+    res.json({ success: true, sessionData });
+
+  } catch (error) {
+    console.error('Session update error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Iamport 결제 검증 엔드포인트 
+app.post('/payments/complete', async (req, res) => {
+  const { imp_uid, merchant_uid, success, error_msg } = req.body;
+  
+  // merchant_uid에서 sessionId 추출
+  const sessionId = extractSessionFromOID(merchant_uid);
+  
+  console.log('Payment verification received:', {
+    imp_uid, merchant_uid, sessionId, success, error_msg
+  });
+
+  if (!success) {
+    // 세션 데이터에서 리턴 URL 가져오기
+    let redirectUrl = `${MAIN_SERVICE_URL}?payment=error&message=payment_cancelled`;
+    if (sessionId) {
+      const sessionData = paymentSessions.get(sessionId);
+      if (sessionData && sessionData.returnUrl) {
+        redirectUrl = `${sessionData.returnUrl}?payment=error&message=payment_cancelled`;
+      }
+    }
+    
+    return res.json({
+      success: false,
+      error: error_msg || '결제 실패',
+      redirectUrl: redirectUrl
+    });
+  }
+
+  // sessionId 우선순위: URL 파라미터 > merchant_uid에서 추출
+  const finalSessionId = sessionId;
+
+  if (!finalSessionId) {
+    console.error('No sessionId available');
+    return res.json({
+      success: false,
+      error: 'Session ID not found',
+      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=session_not_found`
+    });
+  }
+
+  const sessionData = paymentSessions.get(finalSessionId);
+  if (!sessionData) {
+    console.error('Session not found for ID:', finalSessionId);
+    return res.json({
+      success: false,
+      error: 'Session not found',
+      redirectUrl: `${MAIN_SERVICE_URL}?payment=error&message=session_not_found`
+    });
+  }
+
+  console.log('Found session data:', sessionData);
+
+  try {
+    // 메인 서비스에 결제 완료 알림
+    const webhookData = {
+      ...sessionData,
+      sessionId: finalSessionId,
+      transactionId: imp_uid,
+      merchantUid: merchant_uid
+    };
+
+    await notifyMainService(webhookData, 'success');
+
+    // 세션 정리
+    paymentSessions.delete(finalSessionId);
+
+    // 성공 응답과 함께 리다이렉트 URL 제공
+    const returnUrl = sessionData.returnUrl || `${MAIN_SERVICE_URL}`;
+    res.json({
+      success: true,
+      message: '결제가 성공적으로 완료되었습니다',
+      redirectUrl: `${returnUrl}?payment=success&coins=${sessionData.coins}`
+    });
+
+  } catch (error) {
+    console.error('Error processing payment completion:', error);
+    
+    // 에러 발생 시에도 세션의 리턴 URL 사용
+    const errorReturnUrl = sessionData?.returnUrl || MAIN_SERVICE_URL;
+    
+    res.json({
+      success: false,
+      error: '결제 처리 중 오류가 발생했습니다',
+      redirectUrl: `${errorReturnUrl}?payment=error&message=processing_failed`
+    });
+  }
+});
+
 // 웹훅 엔드포인트
 app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
-    
+
     const { sessionId, userId, packageId, amount, coins, bonusCoins, status } = req.body;
-    
+
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
     }
@@ -410,7 +583,7 @@ app.post('/webhook', async (req, res) => {
 
     const result = await notifyMainService(sessionData, status);
     res.json({ success: true, data: result });
-    
+
   } catch (error) {
     console.error('Webhook processing error:', error);
     res.status(500).json({ success: false, error: error.message });
