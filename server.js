@@ -18,7 +18,19 @@ app.use(bodyParser.json());
 
 // 설정
 const IAMPORT_IMP_CODE = 'imp25772872';
-const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
+// MAIN_SERVICE_URL을 webhookUrl에서 동적으로 추출하도록 변경
+function getMainServiceUrl(webhookUrl) {
+  if (webhookUrl) {
+    try {
+      const url = new URL(webhookUrl);
+      return `${url.protocol}//${url.host}`;
+    } catch (error) {
+      console.log('Invalid webhookUrl, using fallback');
+    }
+  }
+  // 기본 fallback (개발환경용)
+  return process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
+}
 const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
 
 function getReturnUrl(webhookUrl) {
@@ -37,9 +49,10 @@ function getReturnUrl(webhookUrl) {
   return 'https://' + hostname + '/';
 }
 
-async function getCoinPackages() {
+async function getCoinPackages(webhookUrl) {
   try {
-    const response = await axios.get(MAIN_SERVICE_URL + '/api/coin-packages', {
+    const mainServiceUrl = getMainServiceUrl(webhookUrl);
+    const response = await axios.get(mainServiceUrl + '/api/coin-packages', {
       timeout: 5000
     });
     return response.data;
@@ -68,7 +81,7 @@ function extractSessionFromOID(oid) {
 async function notifyMainService(sessionData, status) {
   try {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
-    const webhookUrl = sessionData.webhookUrl || (MAIN_SERVICE_URL + '/api/payment/webhook');
+    const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
     
     const payload = {
       sessionId: sessionData.sessionId,
@@ -110,7 +123,7 @@ app.get('/', async (req, res) => {
   try {
     const { userId, sessionId, returnTo, webhookUrl } = req.query;
 
-    const packages = await getCoinPackages();
+    const packages = await getCoinPackages(webhookUrl);
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
     console.log('Available packages:', packages);
 
