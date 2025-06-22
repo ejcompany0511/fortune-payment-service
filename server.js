@@ -31,12 +31,24 @@ function getMainServiceUrl(webhookUrl) {
       console.log('Invalid webhookUrl, using fallback');
     }
   }
-  // 기본 fallback (개발환경용)
+  // 기본 fallback (다중 서비스 지원)
   return process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 }
-// 동적 웹훅 시크릿 처리 함수
-function getWebhookSecret(providedSecret) {
-  return providedSecret || process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
+// 동적 웹훅 시크릿 처리 함수 - 도메인별 시크릿 매핑
+function getWebhookSecret(providedSecret, webhookUrl) {
+  if (providedSecret) {
+    return providedSecret;
+  }
+  
+  // webhookUrl에서 도메인 추출하여 적절한 시크릿 선택
+  if (webhookUrl) {
+    if (webhookUrl.includes('file-clone-platform-jeonghun2410.replit.app')) {
+      return 'TeacherUnse2025SecurePaymentWebhook!$&*';
+    }
+    // 다른 서비스들을 위한 기본 시크릿 유지
+  }
+  
+  return process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
 }
 
 function getReturnUrl(webhookUrl) {
@@ -87,7 +99,7 @@ async function notifyMainService(sessionData, status) {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
     const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
     // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
-    const webhookSecret = getWebhookSecret(sessionData.webhookSecret);
+    const webhookSecret = getWebhookSecret(sessionData.webhookSecret, webhookUrl);
     
     const payload = {
       sessionId: sessionData.sessionId,
