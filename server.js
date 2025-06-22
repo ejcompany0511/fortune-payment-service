@@ -82,6 +82,8 @@ async function notifyMainService(sessionData, status) {
   try {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
     const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
+    // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
+    const webhookSecret = sessionData.webhookSecret || WEBHOOK_SECRET;
     
     const payload = {
       sessionId: sessionData.sessionId,
@@ -99,7 +101,7 @@ async function notifyMainService(sessionData, status) {
 
     const response = await axios.post(webhookUrl, payload, {
       headers: {
-        'Authorization': 'Bearer ' + WEBHOOK_SECRET,
+        'Authorization': 'Bearer ' + webhookSecret,
         'Content-Type': 'application/json'
       },
       timeout: 10000
@@ -121,7 +123,7 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo, webhookUrl } = req.query;
+    const { userId, sessionId, returnTo, webhookUrl, webhookSecret } = req.query;
 
     const packages = await getCoinPackages(webhookUrl);
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
@@ -298,7 +300,8 @@ app.get('/', async (req, res) => {
             userId: '${userId || ''}',
             sessionId: '${sessionId || ''}',
             returnTo: '${returnTo || ''}',
-            webhookUrl: '${webhookUrl || ''}'
+            webhookUrl: '${webhookUrl || ''}',
+            webhookSecret: '${webhookSecret || ''}'
         };
 
         const packages = ${JSON.stringify(packages)};
