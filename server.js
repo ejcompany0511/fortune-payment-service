@@ -63,19 +63,23 @@ async function getCoinPackages(webhookUrl) {
     return response.data;
   } catch (error) {
     console.error('Failed to fetch coin packages:', error.message);
+    // 전체 패키지 fallback 데이터 (7개)
     return [
       { id: 5, name: "40엽전", coins: 40, bonusCoins: 0, price: 3000 },
-      { id: 6, name: "100엽전", coins: 100, bonusCoins: 0, price: 7500 }
+      { id: 6, name: "100엽전", coins: 100, bonusCoins: 10, price: 6900 },
+      { id: 7, name: "220엽전", coins: 220, bonusCoins: 30, price: 14900 },
+      { id: 8, name: "500엽전", coins: 500, bonusCoins: 100, price: 29900 },
+      { id: 9, name: "1200엽전", coins: 1200, bonusCoins: 300, price: 69900 },
+      { id: 10, name: "2500엽전", coins: 2500, bonusCoins: 750, price: 139900 },
+      { id: 11, name: "6000엽전", coins: 6000, bonusCoins: 2000, price: 299900 }
     ];
   }
 }
 
 function extractSessionFromOID(oid) {
-  const parts = oid.split('_');
-  if (parts.length >= 3) {
-    return parts[0] + '_' + parts[1] + '_' + parts[2];
-  }
-  return oid;
+  // oid에서 세션 ID 추출 (예: order_session_123456_timestamp)
+  const sessionMatch = oid.match(/order_(.+?)_\d+$/);
+  return sessionMatch ? sessionMatch[1] : null;
 }
 
 async function notifyMainService(sessionData, status) {
@@ -87,6 +91,8 @@ async function notifyMainService(sessionData, status) {
     
     const payload = {
       sessionId: sessionData.sessionId,
+      transactionId: sessionData.transactionId,
+      merchantUid: sessionData.merchantUid,
       userId: sessionData.userId,
       packageId: sessionData.packageId,
       amount: sessionData.amount,
@@ -165,6 +171,7 @@ app.get('/', async (req, res) => {
         .package-card { background: white; border-radius: 12px; padding: 20px 16px 16px; text-align: center; position: relative; overflow: visible; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
         .package-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
         .package-card.popular { border: 2px solid #3b82f6; }
+        .package-card.selected { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2); }
         
         .popular-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #3b82f6; color: white; font-size: 12px; padding: 4px 8px; border-radius: 12px; font-weight: 500; z-index: 10; white-space: nowrap; }
         
@@ -183,6 +190,12 @@ app.get('/', async (req, res) => {
         .bonus-info { font-size: 12px; color: #059669; margin-top: 2px; }
         .package-price { font-size: 16px; font-weight: bold; color: #111827; }
         .original-price { font-size: 12px; color: #9ca3af; text-decoration: line-through; margin-right: 4px; }
+        
+        /* Payment Button */
+        .payment-section { padding: 16px; position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 448px; background: white; border-top: 1px solid #e5e7eb; }
+        .payment-btn { width: 100%; background: #8b5cf6; color: white; border: none; border-radius: 12px; padding: 16px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .payment-btn:hover { background: #7c3aed; }
+        .payment-btn:disabled { background: #d1d5db; cursor: not-allowed; }
         
         /* Info Sections */
         .info-section { background: white; margin: 16px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
@@ -213,7 +226,6 @@ app.get('/', async (req, res) => {
                     </button>
                     <h1 class="header-title">엽전 상점</h1>
                 </div>
-
             </div>
         </header>
 
@@ -290,15 +302,22 @@ app.get('/', async (req, res) => {
                     <div class="faq-answer">A. 엽전은 획득일로부터 1년간 사용 가능합니다.</div>
                 </div>
                 <div class="faq-item">
-                    <div class="faq-question">Q. 결제 후 엽전이 바로 충전되나요?</div>
-                    <div class="faq-answer">A. 결제 완료 즉시 엽전이 자동으로 충전됩니다.</div>
+                    <div class="faq-question">Q. 결제 후 언제 엽전이 충전되나요?</div>
+                    <div class="faq-answer">A. 결제 완료 후 즉시 자동으로 충전됩니다.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-question">Q. 환불이 가능한가요?</div>
-                    <div class="faq-answer">A. 엽전 사용 전에는 환불이 가능하며, 고객센터로 문의해주세요.</div>
+                    <div class="faq-answer">A. 사용하지 않은 엽전에 한해 7일 이내 환불 가능합니다.</div>
                 </div>
             </div>
         </section>
+    </div>
+
+    <!-- Payment Button (Fixed at bottom) -->
+    <div class="payment-section">
+        <button class="payment-btn" id="paymentBtn" onclick="processPayment()" disabled>
+            패키지를 선택해주세요
+        </button>
     </div>
 
     <script>
@@ -321,20 +340,7 @@ app.get('/', async (req, res) => {
             return new Intl.NumberFormat('ko-KR').format(parseFloat(price));
         }
 
-        function getReturnUrl(webhookUrl) {
-            if (!webhookUrl) {
-                console.error('No webhook URL provided');
-                return window.location.origin;
-            }
-            
-            try {
-                const url = new URL(webhookUrl);
-                return url.origin;
-            } catch (e) {
-                console.error('Invalid webhook URL:', webhookUrl);
-                return window.location.origin;
-            }
-        }
+        let selectedPackage = null;
 
         function renderPackages() {
             const grid = document.getElementById('packagesGrid');
@@ -358,101 +364,154 @@ app.get('/', async (req, res) => {
         }
 
         function selectPackage(packageId) {
-            const selectedPackage = packages.find(p => p.id === packageId);
+            selectedPackage = packages.find(p => p.id === packageId);
             if (!selectedPackage) return;
 
             console.log('Selected package:', selectedPackage);
             
+            // 모든 카드에서 selected 클래스 제거
+            document.querySelectorAll('.package-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // 선택된 카드에 selected 클래스 추가
+            event.currentTarget.classList.add('selected');
+            
+            // 결제 버튼 활성화
+            const paymentBtn = document.getElementById('paymentBtn');
+            paymentBtn.disabled = false;
+            paymentBtn.textContent = selectedPackage.name + ' 구매하기 (₩' + formatPrice(selectedPackage.price) + ')';
+        }
+
+        async function processPayment() {
+            if (!selectedPackage) {
+                alert('패키지를 선택해주세요.');
+                return;
+            }
+
             if (!sessionData.userId || !sessionData.sessionId) {
                 alert('세션 정보가 없습니다. 다시 시도해주세요.');
                 return;
             }
 
-            const IMP = window.IMP;
-            IMP.init('` + IAMPORT_IMP_CODE + `');
+            try {
+                // 세션 업데이트 API 호출
+                const updateResponse = await fetch('/api/update-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: sessionData.sessionId,
+                        userId: sessionData.userId,
+                        packageId: selectedPackage.id,
+                        webhookUrl: sessionData.webhookUrl
+                    })
+                });
 
-            const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
-            
-            IMP.request_pay({
-                pg: 'html5_inicis',
-                pay_method: 'card',
-                merchant_uid: merchantUid,
-                name: selectedPackage.name,
-                amount: selectedPackage.price,
-                buyer_email: '',
-                buyer_name: 'EveryUnse User',
-                buyer_tel: '',
-                buyer_addr: '',
-                buyer_postcode: '',
-                custom_data: {
-                    sessionId: sessionData.sessionId,
-                    userId: sessionData.userId,
-                    packageId: selectedPackage.id,
-                    coins: selectedPackage.coins,
-                    bonusCoins: selectedPackage.bonusCoins || 0,
-                    webhookUrl: sessionData.webhookUrl
+                if (!updateResponse.ok) {
+                    throw new Error('세션 업데이트 실패');
                 }
-            }, function(rsp) {
-                if (rsp.success) {
-                    console.log('Payment successful:', rsp);
-                    
-                    fetch('/webhook', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            sessionId: sessionData.sessionId,
-                            userId: sessionData.userId,
-                            packageId: selectedPackage.id,
-                            amount: selectedPackage.price,
-                            coins: selectedPackage.coins,
-                            bonusCoins: selectedPackage.bonusCoins || 0,
-                            status: 'completed',
-                            transactionId: rsp.imp_uid,
-                            merchantUid: rsp.merchant_uid,
-                            webhookUrl: sessionData.webhookUrl,
-                            webhookSecret: sessionData.webhookSecret
-                        })
-                    }).then(response => {
-                        console.log('Webhook response status:', response.status);
-                        if (!response.ok) {
-                            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-                        }
-                        return response.json();
-                    }).then(result => {
-                        console.log('Webhook result:', result);
-                        if (result.success) {
-                            alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            console.log('Redirecting to:', finalUrl);
-                            window.location.href = finalUrl;
-                        } else {
-                            console.error('Webhook failed:', result);
-                            alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            window.location.href = finalUrl;
-                        }
-                    }).catch(error => {
-                        console.error('Webhook error:', error);
-                        alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                        window.location.href = finalUrl;
-                    });
-                } else {
-                    console.log('Payment failed:', rsp);
-                    alert('결제에 실패했습니다: ' + rsp.error_msg);
+
+                // Iamport 결제 진행
+                const IMP = window.IMP;
+                IMP.init('` + IAMPORT_IMP_CODE + `');
+
+                const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
+                
+                IMP.request_pay({
+                    pg: 'html5_inicis',
+                    pay_method: 'card',
+                    merchant_uid: merchantUid,
+                    name: selectedPackage.name,
+                    amount: selectedPackage.price,
+                    buyer_email: '',
+                    buyer_name: 'EveryUnse User',
+                    buyer_tel: '',
+                    buyer_addr: '',
+                    buyer_postcode: '',
+                    custom_data: {
+                        sessionId: sessionData.sessionId,
+                        userId: sessionData.userId,
+                        packageId: selectedPackage.id,
+                        coins: selectedPackage.coins,
+                        bonusCoins: selectedPackage.bonusCoins || 0,
+                        webhookUrl: sessionData.webhookUrl
+                    }
+                }, function(rsp) {
+                    if (rsp.success) {
+                        console.log('Payment successful:', rsp);
+                        
+                        fetch('/webhook', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                sessionId: sessionData.sessionId,
+                                userId: sessionData.userId,
+                                packageId: selectedPackage.id,
+                                amount: selectedPackage.price,
+                                coins: selectedPackage.coins,
+                                bonusCoins: selectedPackage.bonusCoins || 0,
+                                status: 'completed',
+                                transactionId: rsp.imp_uid,
+                                merchantUid: rsp.merchant_uid,
+                                webhookUrl: sessionData.webhookUrl
+                            })
+                        }).then(response => response.json())
+                          .then(result => {
+                              console.log('Webhook result:', result);
+                              if (result.success) {
+                                  alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                                  const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                                  const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                                  console.log('Redirecting to:', finalUrl);
+                                  window.location.href = finalUrl;
+                              } else {
+                                  throw new Error(result.error || '결제 처리 중 오류가 발생했습니다.');
+                              }
+                          })
+                          .catch(error => {
+                              console.error('Webhook error:', error);
+                              alert('결제는 완료되었지만 처리 중 오류가 발생했습니다. 고객센터에 문의해주세요.');
+                          });
+                    } else {
+                        console.log('Payment failed:', rsp);
+                        alert('결제가 실패했습니다: ' + rsp.error_msg);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Payment error:', error);
+                alert('결제 처리 중 오류가 발생했습니다.');
+            }
+        }
+
+        function getReturnUrl(webhookUrl) {
+            if (webhookUrl) {
+                try {
+                    const url = new URL(webhookUrl);
+                    return url.origin + '/';
+                } catch (error) {
+                    console.log('Invalid webhookUrl, using fallback');
                 }
-            });
+            }
+            return window.location.origin || 'https://everyunse.com/';
         }
 
         function goBack() {
-            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-            window.location.href = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+            try {
+                const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                console.log('Going back to:', finalUrl);
+                window.location.href = finalUrl;
+            } catch (error) {
+                console.error('Navigation error:', error);
+                window.history.back();
+            }
         }
 
-        document.addEventListener('DOMContentLoaded', renderPackages);
+        // 초기 렌더링
+        document.addEventListener('DOMContentLoaded', function() {
+            renderPackages();
+        });
     </script>
 </body>
 </html>`;
@@ -460,7 +519,34 @@ app.get('/', async (req, res) => {
     res.send(htmlContent);
   } catch (error) {
     console.error('Error serving payment page:', error);
-    res.status(500).send('Internal Server Error');
+    res.status(500).json({ error: 'Failed to load payment page' });
+  }
+});
+
+// 세션 업데이트 API
+app.post('/api/update-session', async (req, res) => {
+  try {
+    const { sessionId, userId, packageId, webhookUrl } = req.body;
+    
+    if (!sessionId || !userId || !packageId) {
+      return res.status(400).json({ success: false, error: 'Missing required data' });
+    }
+
+    // 메인 서비스에 세션 업데이트 요청
+    const mainServiceUrl = getMainServiceUrl(webhookUrl);
+    const updateResponse = await axios.post(mainServiceUrl + '/api/payment/update-session', {
+      sessionId,
+      userId,
+      packageId,
+      webhookUrl
+    });
+
+    console.log('Session update response:', updateResponse.data);
+    res.json({ success: true, data: updateResponse.data });
+    
+  } catch (error) {
+    console.error('Session update error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -469,7 +555,7 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
     
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl, webhookSecret } = req.body;
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, transactionId, merchantUid, webhookUrl } = req.body;
     
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
@@ -477,13 +563,14 @@ app.post('/webhook', async (req, res) => {
 
     const sessionData = {
       sessionId: sessionId,
+      transactionId: transactionId,
+      merchantUid: merchantUid,
       userId: userId,
       packageId: packageId,
       amount: amount,
       coins: coins,
       bonusCoins: bonusCoins || 0,
-      webhookUrl: webhookUrl,
-      webhookSecret: webhookSecret
+      webhookUrl: webhookUrl
     };
 
     const result = await notifyMainService(sessionData, status);
@@ -492,6 +579,76 @@ app.post('/webhook', async (req, res) => {
   } catch (error) {
     console.error('Webhook processing error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// KG Inicis 웹훅 처리 (legacy)
+app.post('/kg-inicis-webhook', async (req, res) => {
+  try {
+    console.log('KG Inicis webhook received:', req.body);
+    
+    const {
+      resultCode,
+      resultMsg,
+      mid,
+      oid,
+      price,
+      MOID,
+      authToken,
+      payMethod,
+      timestamp
+    } = req.body;
+
+    if (resultCode === '0000') {
+      // 성공
+      console.log('Payment successful for order:', oid);
+      
+      // OID에서 세션 ID 추출
+      const sessionId = extractSessionFromOID(oid);
+      console.log('Extracted session ID:', sessionId);
+      
+      if (sessionId && paymentSessions.has(sessionId)) {
+        const sessionData = paymentSessions.get(sessionId);
+        console.log('Found session data:', sessionData);
+        
+        // 메인 서비스에 완료 알림
+        await notifyMainService({
+          ...sessionData,
+          transactionId: authToken || oid,
+          merchantUid: oid,
+          amount: parseInt(price)
+        }, 'completed');
+        
+        // 세션 삭제
+        paymentSessions.delete(sessionId);
+        
+        res.send('OK');
+      } else {
+        console.error('Session not found:', sessionId);
+        res.status(400).send('Session not found');
+      }
+    } else {
+      // 실패
+      console.log('Payment failed:', resultMsg);
+      const sessionId = extractSessionFromOID(oid);
+      
+      if (sessionId && paymentSessions.has(sessionId)) {
+        const sessionData = paymentSessions.get(sessionId);
+        await notifyMainService({
+          ...sessionData,
+          transactionId: authToken || oid,
+          merchantUid: oid,
+          amount: parseInt(price)
+        }, 'failed');
+        
+        paymentSessions.delete(sessionId);
+      }
+      
+      res.send('FAIL');
+    }
+  } catch (error) {
+    console.error('KG Inicis webhook error:', error);
+    res.status(500).send('Error processing webhook');
   }
 });
 
