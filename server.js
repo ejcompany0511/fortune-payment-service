@@ -10,7 +10,10 @@ const PORT = process.env.PORT || 3000;
 const paymentSessions = new Map();
 
 app.use(cors({
-  origin: ['https://www.everyunse.com', 'https://everyunse.com', 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev'],
+  origin: function (origin, callback) {
+    // 모든 도메인에서의 접근을 허용 (복제 서비스들을 위해)
+    callback(null, true);
+  },
   credentials: true
 }));
 app.use(bodyParser.urlencoded({ extended: true }));
