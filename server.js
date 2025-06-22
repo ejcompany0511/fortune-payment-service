@@ -319,6 +319,18 @@ app.get('/', async (req, res) => {
             return new Intl.NumberFormat('ko-KR').format(price);
         }
 
+        function getReturnUrl(webhookUrl) {
+            if (!webhookUrl) return 'https://everyunse.com';
+            
+            try {
+                const url = new URL(webhookUrl);
+                return url.origin;
+            } catch (e) {
+                console.error('Invalid webhook URL:', webhookUrl);
+                return 'https://everyunse.com';
+            }
+        }
+
         function renderPackages() {
             const grid = document.getElementById('packages-grid');
             grid.innerHTML = packages.map((pkg, index) => {
