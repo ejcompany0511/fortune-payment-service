@@ -196,6 +196,7 @@ app.get('/', async (req, res) => {
         .faq-question { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 4px; }
         .faq-answer { font-size: 14px; color: #6b7280; }
     </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.iamport.kr/js/iamport.payment-1.1.5.js"></script>
 </head>
 <body>
