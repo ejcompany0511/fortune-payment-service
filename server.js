@@ -28,29 +28,37 @@ function getReturnUrl() {
 
 async function getCoinPackages() {
   try {
-    console.log('Fetching coin packages from:', MAIN_SERVICE_URL + '/api/coin-packages');
-    const response = await axios.get(MAIN_SERVICE_URL + '/api/coin-packages');
+    const response = await axios.get(MAIN_SERVICE_URL + '/api/coin-packages', {
+      timeout: 5000
+    });
     return response.data;
   } catch (error) {
-    console.error('Failed to fetch coin packages:', error.message);
+    console.log('Failed to fetch packages from main service, using fallback data');
     return [
       { id: 5, name: "40엽전", coins: 40, bonusCoins: 0, price: 3000 },
-      { id: 6, name: "100엽전", coins: 100, bonusCoins: 0, price: 7500 }
+      { id: 6, name: "100엽전", coins: 100, bonusCoins: 10, price: 6900 },
+      { id: 7, name: "220엽전", coins: 220, bonusCoins: 30, price: 14900 },
+      { id: 8, name: "500엽전", coins: 500, bonusCoins: 100, price: 29900 },
+      { id: 9, name: "1200엽전", coins: 1200, bonusCoins: 300, price: 69900 },
+      { id: 10, name: "2500엽전", coins: 2500, bonusCoins: 700, price: 139900 },
+      { id: 11, name: "5500엽전", coins: 5500, bonusCoins: 1700, price: 299900 }
     ];
   }
 }
 
 function extractSessionFromOID(oid) {
   const parts = oid.split('_');
-  if (parts.length >= 3) {
-    return parts[0] + '_' + parts[1] + '_' + parts[2];
+  if (parts.length >= 2) {
+    return parts[1];
   }
   return oid;
 }
 
 async function notifyMainService(sessionData, status) {
   try {
-    const webhookUrl = MAIN_SERVICE_URL + '/api/payment/webhook';
+    // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
+    const webhookUrl = sessionData.webhookUrl || (MAIN_SERVICE_URL + '/api/payment/webhook');
+    
     const payload = {
       sessionId: sessionData.sessionId,
       userId: sessionData.userId,
@@ -62,7 +70,7 @@ async function notifyMainService(sessionData, status) {
       timestamp: new Date().toISOString()
     };
 
-    console.log('Sending webhook to main service:', webhookUrl);
+    console.log('Sending webhook to target service:', webhookUrl);
     console.log('Webhook payload:', payload);
 
     const response = await axios.post(webhookUrl, payload, {
@@ -76,7 +84,7 @@ async function notifyMainService(sessionData, status) {
     console.log('Webhook response:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Failed to notify main service:', error.message);
+    console.error('Failed to notify target service:', error.message);
     throw error;
   }
 }
@@ -89,7 +97,7 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo } = req.query;
+    const { userId, sessionId, returnTo, webhookUrl } = req.query;
 
     const packages = await getCoinPackages();
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
@@ -150,19 +158,16 @@ app.get('/', async (req, res) => {
         .original-price { font-size: 12px; color: #9ca3af; text-decoration: line-through; margin-right: 4px; }
         
         /* Info Sections */
-        .info-section { background: white; margin: 16px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+        .info-section { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #e5e7eb; }
         .info-title { font-size: 16px; font-weight: bold; color: #111827; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        .info-content { font-size: 14px; color: #6b7280; line-height: 1.6; }
         .info-list { list-style: none; }
-        .info-list li { padding: 4px 0; position: relative; padding-left: 16px; }
-        .info-list li::before { content: '•'; color: #3b82f6; position: absolute; left: 0; }
-        
-        /* FAQ */
-        .faq-item { margin-bottom: 16px; }
-        .faq-question { font-weight: 600; color: #111827; margin-bottom: 4px; }
+        .info-list li { font-size: 14px; color: #6b7280; margin-bottom: 6px; padding-left: 16px; position: relative; }
+        .info-list li::before { content: '•'; color: #3b82f6; font-weight: bold; position: absolute; left: 0; }
+        .faq-item { margin-bottom: 12px; }
+        .faq-question { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 4px; }
         .faq-answer { font-size: 14px; color: #6b7280; }
     </style>
-    <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
+    <script src="https://cdn.iamport.kr/js/iamport.payment-1.1.5.js"></script>
 </head>
 <body>
     <div class="container">
@@ -171,30 +176,29 @@ app.get('/', async (req, res) => {
             <div class="header-content">
                 <div class="header-left">
                     <button class="back-btn" onclick="goBack()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="m15 18-6-6 6-6"/>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H6m6-7l-7 7 7 7"/>
                         </svg>
                     </button>
                     <h1 class="header-title">엽전 상점</h1>
                 </div>
-
             </div>
         </header>
 
         <!-- Hero Section -->
         <section class="hero">
             <div class="hero-content">
-                <h2 class="hero-title">엽전을 충전하세요</h2>
-                <p class="hero-subtitle">더 많은 운세를 확인하려면 엽전이 필요해요</p>
+                <h2 class="hero-title">🪙 엽전 충전하기</h2>
+                <p class="hero-subtitle">더 많은 운세 서비스를 이용해보세요</p>
             </div>
             <div class="hero-icon">💰</div>
         </section>
 
-        <!-- Packages -->
+        <!-- Packages Section -->
         <section class="packages-section">
             <h3 class="section-title">엽전 패키지</h3>
-            <div class="packages-grid" id="packagesGrid">
-                <!-- 패키지들이 여기에 동적으로 추가됩니다 -->
+            <div class="packages-grid" id="packages-grid">
+                <!-- 패키지가 여기에 동적으로 생성됩니다 -->
             </div>
         </section>
 
@@ -269,7 +273,8 @@ app.get('/', async (req, res) => {
         const sessionData = {
             userId: '${userId || ''}',
             sessionId: '${sessionId || ''}',
-            returnTo: '${returnTo || ''}'
+            returnTo: '${returnTo || ''}',
+            webhookUrl: '${webhookUrl || ''}'
         };
 
         const packages = ${JSON.stringify(packages)};
@@ -280,20 +285,19 @@ app.get('/', async (req, res) => {
         }
 
         function formatPrice(price) {
-            return new Intl.NumberFormat('ko-KR').format(parseFloat(price));
+            return new Intl.NumberFormat('ko-KR').format(price);
         }
 
         function renderPackages() {
-            const grid = document.getElementById('packagesGrid');
-            if (!grid || !packages) return;
-
+            const grid = document.getElementById('packages-grid');
             grid.innerHTML = packages.map((pkg, index) => {
-                const isPopular = pkg.isPopular || pkg.is_popular;
-                
+                const isPopular = index === 3; // 4번째 패키지를 인기 상품으로
                 return \`
                     <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
                         \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
-                        <div class="package-icon \${getGradientClass(index)}">💰</div>
+                        <div class="package-icon \${getGradientClass(index)}">
+                            💰
+                        </div>
                         <div class="package-name">\${pkg.name}</div>
                         <div class="package-details">
                             <div class="coins-info">\${pkg.coins}엽전</div>
@@ -339,7 +343,8 @@ app.get('/', async (req, res) => {
                     userId: sessionData.userId,
                     packageId: selectedPackage.id,
                     coins: selectedPackage.coins,
-                    bonusCoins: selectedPackage.bonusCoins || 0
+                    bonusCoins: selectedPackage.bonusCoins || 0,
+                    webhookUrl: sessionData.webhookUrl
                 }
             }, function(rsp) {
                 if (rsp.success) {
@@ -357,7 +362,8 @@ app.get('/', async (req, res) => {
                             bonusCoins: selectedPackage.bonusCoins || 0,
                             status: 'completed',
                             transactionId: rsp.imp_uid,
-                            merchantUid: rsp.merchant_uid
+                            merchantUid: rsp.merchant_uid,
+                            webhookUrl: sessionData.webhookUrl
                         })
                     }).then(response => response.json())
                       .then(result => {
@@ -393,7 +399,7 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
     
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, status } = req.body;
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl } = req.body;
     
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
@@ -405,7 +411,8 @@ app.post('/webhook', async (req, res) => {
       packageId: packageId,
       amount: amount,
       coins: coins,
-      bonusCoins: bonusCoins || 0
+      bonusCoins: bonusCoins || 0,
+      webhookUrl: webhookUrl
     };
 
     const result = await notifyMainService(sessionData, status);
