@@ -365,22 +365,19 @@ app.get('/', async (req, res) => {
 
         function selectPackage(packageId) {
             selectedPackage = packages.find(p => p.id === packageId);
-            if (!selectedPackage) return;
-
-            console.log('Selected package:', selectedPackage);
             
             // 모든 카드에서 selected 클래스 제거
             document.querySelectorAll('.package-card').forEach(card => {
                 card.classList.remove('selected');
             });
             
-            // 선택된 카드에 selected 클래스 추가
+            // 선택한 카드에 selected 클래스 추가
             event.currentTarget.classList.add('selected');
             
             // 결제 버튼 활성화
             const paymentBtn = document.getElementById('paymentBtn');
             paymentBtn.disabled = false;
-            paymentBtn.textContent = selectedPackage.name + ' 구매하기 (₩' + formatPrice(selectedPackage.price) + ')';
+            paymentBtn.textContent = selectedPackage.name + ' 결제하기';
         }
 
         async function processPayment() {
@@ -389,13 +386,8 @@ app.get('/', async (req, res) => {
                 return;
             }
 
-            if (!sessionData.userId || !sessionData.sessionId) {
-                alert('세션 정보가 없습니다. 다시 시도해주세요.');
-                return;
-            }
-
             try {
-                // 세션 업데이트 API 호출
+                // 세션 업데이트
                 const updateResponse = await fetch('/api/update-session', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
