@@ -59,7 +59,6 @@ async function notifyMainService(sessionData, status) {
       coins: sessionData.coins,
       bonusCoins: sessionData.bonusCoins || 0,
       status: status,
-      serviceId: sessionData.serviceId, 
       timestamp: new Date().toISOString()
     };
 
@@ -90,8 +89,7 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo, serviceId } = req.query;
-
+    const { userId, sessionId, returnTo } = req.query;
 
     const packages = await getCoinPackages();
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
@@ -271,8 +269,7 @@ app.get('/', async (req, res) => {
         const sessionData = {
             userId: '${userId || ''}',
             sessionId: '${sessionId || ''}',
-            returnTo: '${returnTo || ''}',
-            serviceId: '${serviceId || 'everyunse'}'
+            returnTo: '${returnTo || ''}'
         };
 
         const packages = ${JSON.stringify(packages)};
@@ -342,8 +339,7 @@ app.get('/', async (req, res) => {
                     userId: sessionData.userId,
                     packageId: selectedPackage.id,
                     coins: selectedPackage.coins,
-                    bonusCoins: selectedPackage.bonusCoins || 0,
-                    serviceId: sessionData.serviceId  
+                    bonusCoins: selectedPackage.bonusCoins || 0
                 }
             }, function(rsp) {
                 if (rsp.success) {
@@ -397,34 +393,30 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
     
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, returnUrl, serviceId } = req.body;
-
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, status } = req.body;
+    
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
     }
 
     const sessionData = {
-      userId: userId,
       sessionId: sessionId,
-      packageId: parseInt(packageId),
-      amount: parseFloat(amount),
-      coins: parseInt(coins),
-      bonusCoins: parseInt(bonusCoins) || 0,
-      returnUrl: returnUrl,
-      serviceId: serviceId || 'everyunse',  
-      timestamp: Date.now()
+      userId: userId,
+      packageId: packageId,
+      amount: amount,
+      coins: coins,
+      bonusCoins: bonusCoins || 0
     };
 
-    console.log('📦 Final sessionData sent to main service:', sessionData);
-
-    const status = req.body.status || 'completed';
     const result = await notifyMainService(sessionData, status);
-
-    // ✅ 클라이언트에 응답 추가
-    res.json({ success: true, coinsAdded: sessionData.coins });
+    res.json({ success: true, data: result });
     
   } catch (error) {
     console.error('Webhook processing error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+app.listen(PORT, () => {
+  console.log('Payment service running on port', PORT);
 });
