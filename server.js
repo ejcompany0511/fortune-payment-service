@@ -400,9 +400,11 @@ app.get('/', async (req, res) => {
                       .then(result => {
                           console.log('Webhook result:', result);
                           if (result.success) {
-                              alert('결제가 완료되었습니다!');
+                              alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
                               const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                              window.location.href = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                              const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                              console.log('Redirecting to:', finalUrl);
+                              window.location.href = finalUrl;
                           }
                       });
                 } else {
