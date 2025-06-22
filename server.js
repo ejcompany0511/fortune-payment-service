@@ -371,7 +371,7 @@ app.get('/', async (req, res) => {
             }
 
             const IMP = window.IMP;
-            IMP.init('${IAMPORT_IMP_CODE}');
+            IMP.init('` + IAMPORT_IMP_CODE + `');
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
