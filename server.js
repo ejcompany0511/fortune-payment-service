@@ -21,7 +21,18 @@ const IAMPORT_IMP_CODE = 'imp25772872';
 const MAIN_SERVICE_URL = process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
 
-function getReturnUrl() {
+function getReturnUrl(webhookUrl) {
+  // webhookUrl에서 도메인 추출하여 return URL 생성
+  if (webhookUrl) {
+    try {
+      const url = new URL(webhookUrl);
+      return `${url.protocol}//${url.host}/`;
+    } catch (error) {
+      console.log('Invalid webhookUrl, using default return URL');
+    }
+  }
+  
+  // 기본값 (기존 로직 유지)
   const hostname = process.env.NODE_ENV === 'production' ? 'www.everyunse.com' : '4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
   return 'https://' + hostname + '/';
 }
@@ -370,7 +381,8 @@ app.get('/', async (req, res) => {
                           console.log('Webhook result:', result);
                           if (result.success) {
                               alert('결제가 완료되었습니다!');
-                              window.location.href = '${getReturnUrl()}' + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                              const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                              window.location.href = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                           }
                       });
                 } else {
@@ -381,7 +393,8 @@ app.get('/', async (req, res) => {
         }
 
         function goBack() {
-            window.location.href = '${getReturnUrl()}' + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+            window.location.href = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
         }
 
         document.addEventListener('DOMContentLoaded', renderPackages);
