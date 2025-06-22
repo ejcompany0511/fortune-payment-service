@@ -34,7 +34,8 @@ function getMainServiceUrl(webhookUrl) {
   // 기본 fallback (개발환경용)
   return process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 }
-const WEBHOOK_SECRET = 'EveryUnse2024PaymentSecureWebhook!@#';
+// 환경변수에서 시크릿 가져오기, 없으면 기본값 사용
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
 
 function getReturnUrl(webhookUrl) {
   // webhookUrl에서 도메인 추출하여 return URL 생성
@@ -79,8 +80,33 @@ async function notifyMainService(sessionData, status) {
   try {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
     const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
-    // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
-    const webhookSecret = sessionData.webhookSecret || WEBHOOK_SECRET;
+    
+    // 서비스별 웹훅 시크릿 동적 결정 (도메인 기반)
+    let webhookSecret = WEBHOOK_SECRET; // 기본값
+    let serviceIdentifier = 'Default';
+    
+    if (webhookUrl) {
+      // TeacherUnse 서비스들
+      if (webhookUrl.includes('file-clone-platform-jeonghun2410.replit.app') || 
+          webhookUrl.includes('teacherunse')) {
+        webhookSecret = 'TeacherUnse2025SecurePaymentWebhook!$&*';
+        serviceIdentifier = 'TeacherUnse';
+      }
+      // EveryUnse 서비스들  
+      else if (webhookUrl.includes('everyunse.com') || 
+               webhookUrl.includes('www.everyunse.com')) {
+        webhookSecret = 'EveryUnse2024PaymentSecureWebhook!@#';
+        serviceIdentifier = 'EveryUnse';
+      }
+      // Fortune-teller 서비스
+      else if (webhookUrl.includes('fortune-teller-jeonghun2410.replit.app')) {
+        webhookSecret = 'EveryUnse2024PaymentSecureWebhook!@#';
+        serviceIdentifier = 'FortuneTeller';
+      }
+      // 기타 서비스들은 기본 시크릿 사용
+    }
+    
+    console.log('Using webhook secret for service:', serviceIdentifier, 'Domain:', webhookUrl);
     
     const payload = {
       sessionId: sessionData.sessionId,
