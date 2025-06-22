@@ -129,7 +129,8 @@ app.get('/', async (req, res) => {
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
     console.log('Available packages:', packages);
 
-    res.send(`<!DOCTYPE html>
+    // HTML 템플릿을 문자열 연결로 생성하여 변수 보간 문제 해결
+    const htmlContent = `<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -302,14 +303,14 @@ app.get('/', async (req, res) => {
 
     <script>
         const sessionData = {
-            userId: '${userId || ''}',
-            sessionId: '${sessionId || ''}',
-            returnTo: '${returnTo || ''}',
-            webhookUrl: '${webhookUrl || ''}',
-            webhookSecret: '${webhookSecret || ''}'
+            userId: '` + (userId || '') + `',
+            sessionId: '` + (sessionId || '') + `',
+            returnTo: '` + (returnTo || '') + `',
+            webhookUrl: '` + (webhookUrl || '') + `',
+            webhookSecret: '` + (webhookSecret || '') + `'
         };
 
-        const packages = ${JSON.stringify(packages)};
+        const packages = ` + JSON.stringify(packages) + `;
 
         function getGradientClass(index) {
             const gradients = ['gradient-blue', 'gradient-purple', 'gradient-pink', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-indigo'];
@@ -341,21 +342,18 @@ app.get('/', async (req, res) => {
 
             grid.innerHTML = packages.map((pkg, index) => {
                 const isPopular = pkg.isPopular || pkg.is_popular;
+                const bonusHtml = pkg.bonusCoins > 0 ? '<div class="bonus-info">보너스 +' + pkg.bonusCoins + '엽전</div>' : '';
                 
-                return \`
-                    <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
-                        \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
-                        <div class="package-icon \${getGradientClass(index)}">💰</div>
-                        <div class="package-name">\${pkg.name}</div>
-                        <div class="package-details">
-                            <div class="coins-info">\${pkg.coins}엽전</div>
-                            \${pkg.bonusCoins > 0 ? \`<div class="bonus-info">보너스 +\${pkg.bonusCoins}엽전</div>\` : ''}
-                        </div>
-                        <div class="package-price">
-                            ₩\${formatPrice(pkg.price)}
-                        </div>
-                    </div>
-                \`;
+                return '<div class="package-card ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage(' + pkg.id + ')">' +
+                    (isPopular ? '<div class="popular-badge">인기</div>' : '') +
+                    '<div class="package-icon ' + getGradientClass(index) + '">💰</div>' +
+                    '<div class="package-name">' + pkg.name + '</div>' +
+                    '<div class="package-details">' +
+                        '<div class="coins-info">' + pkg.coins + '엽전</div>' +
+                        bonusHtml +
+                    '</div>' +
+                    '<div class="package-price">₩' + formatPrice(pkg.price) + '</div>' +
+                '</div>';
             }).join('');
         }
 
@@ -417,7 +415,7 @@ app.get('/', async (req, res) => {
                     }).then(response => {
                         console.log('Webhook response status:', response.status);
                         if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                         }
                         return response.json();
                     }).then(result => {
@@ -457,7 +455,9 @@ app.get('/', async (req, res) => {
         document.addEventListener('DOMContentLoaded', renderPackages);
     </script>
 </body>
-</html>`);
+</html>`;
+
+    res.send(htmlContent);
   } catch (error) {
     console.error('Error serving payment page:', error);
     res.status(500).send('Internal Server Error');
