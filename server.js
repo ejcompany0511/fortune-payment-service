@@ -34,8 +34,10 @@ function getMainServiceUrl(webhookUrl) {
   // 기본 fallback (개발환경용)
   return process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 }
-// 환경변수에서 시크릿 가져오기, 없으면 기본값 사용
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
+// 동적 웹훅 시크릿 처리 함수
+function getWebhookSecret(providedSecret) {
+  return providedSecret || process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
+}
 
 function getReturnUrl(webhookUrl) {
   // webhookUrl에서 도메인 추출하여 return URL 생성
@@ -80,33 +82,8 @@ async function notifyMainService(sessionData, status) {
   try {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
     const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
-    
-    // 서비스별 웹훅 시크릿 동적 결정 (도메인 기반)
-    let webhookSecret = WEBHOOK_SECRET; // 기본값
-    let serviceIdentifier = 'Default';
-    
-    if (webhookUrl) {
-      // TeacherUnse 서비스들
-      if (webhookUrl.includes('file-clone-platform-jeonghun2410.replit.app') || 
-          webhookUrl.includes('teacherunse')) {
-        webhookSecret = 'TeacherUnse2025SecurePaymentWebhook!$&*';
-        serviceIdentifier = 'TeacherUnse';
-      }
-      // EveryUnse 서비스들  
-      else if (webhookUrl.includes('everyunse.com') || 
-               webhookUrl.includes('www.everyunse.com')) {
-        webhookSecret = 'EveryUnse2024PaymentSecureWebhook!@#';
-        serviceIdentifier = 'EveryUnse';
-      }
-      // Fortune-teller 서비스
-      else if (webhookUrl.includes('fortune-teller-jeonghun2410.replit.app')) {
-        webhookSecret = 'EveryUnse2024PaymentSecureWebhook!@#';
-        serviceIdentifier = 'FortuneTeller';
-      }
-      // 기타 서비스들은 기본 시크릿 사용
-    }
-    
-    console.log('Using webhook secret for service:', serviceIdentifier, 'Domain:', webhookUrl);
+    // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
+    const webhookSecret = getWebhookSecret(sessionData.webhookSecret);
     
     const payload = {
       sessionId: sessionData.sessionId,
@@ -116,6 +93,7 @@ async function notifyMainService(sessionData, status) {
       coins: sessionData.coins,
       bonusCoins: sessionData.bonusCoins || 0,
       status: status,
+      webhookSecret: webhookSecret,
       timestamp: new Date().toISOString()
     };
 
@@ -124,7 +102,6 @@ async function notifyMainService(sessionData, status) {
 
     const response = await axios.post(webhookUrl, payload, {
       headers: {
-        'Authorization': 'Bearer ' + webhookSecret,
         'Content-Type': 'application/json'
       },
       timeout: 10000
@@ -434,19 +411,37 @@ app.get('/', async (req, res) => {
                             status: 'completed',
                             transactionId: rsp.imp_uid,
                             merchantUid: rsp.merchant_uid,
-                            webhookUrl: sessionData.webhookUrl
+                            webhookUrl: sessionData.webhookUrl,
+                            webhookSecret: sessionData.webhookSecret
                         })
-                    }).then(response => response.json())
-                      .then(result => {
-                          console.log('Webhook result:', result);
-                          if (result.success) {
-                              alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
-                              const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                              const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                              console.log('Redirecting to:', finalUrl);
-                              window.location.href = finalUrl;
-                          }
-                      });
+                    }).then(response => {
+                        console.log('Webhook response status:', response.status);
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    }).then(result => {
+                        console.log('Webhook result:', result);
+                        if (result.success) {
+                            alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                            console.log('Redirecting to:', finalUrl);
+                            window.location.href = finalUrl;
+                        } else {
+                            console.error('Webhook failed:', result);
+                            alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                            window.location.href = finalUrl;
+                        }
+                    }).catch(error => {
+                        console.error('Webhook error:', error);
+                        alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                        window.location.href = finalUrl;
+                    });
                 } else {
                     console.log('Payment failed:', rsp);
                     alert('결제에 실패했습니다: ' + rsp.error_msg);
@@ -474,7 +469,7 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
     
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl } = req.body;
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl, webhookSecret } = req.body;
     
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
@@ -487,7 +482,8 @@ app.post('/webhook', async (req, res) => {
       amount: amount,
       coins: coins,
       bonusCoins: bonusCoins || 0,
-      webhookUrl: webhookUrl
+      webhookUrl: webhookUrl,
+      webhookSecret: webhookSecret
     };
 
     const result = await notifyMainService(sessionData, status);
