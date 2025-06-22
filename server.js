@@ -35,8 +35,18 @@ function getMainServiceUrl(webhookUrl) {
   return process.env.MAIN_SERVICE_URL || 'https://4c3fcf58-6c3c-41e7-8ad1-bf9cfba0bc03-00-1kaqcmy7wgd8e.riker.replit.dev';
 }
 // 동적 웹훅 시크릿 처리 함수
-function getWebhookSecret(providedSecret) {
-  return providedSecret || process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
+function getWebhookSecret(providedSecret, webhookUrl) {
+  if (providedSecret) {
+    return providedSecret;
+  }
+  
+  // 도메인별 웹훅 시크릿 설정
+  if (webhookUrl && webhookUrl.includes('file-clone-platform-jeonghun2410.replit.app')) {
+    return 'TeacherUnse2025SecurePaymentWebhook!$&*';
+  }
+  
+  // 기본값 (다른 서비스용)
+  return process.env.WEBHOOK_SECRET || 'EveryUnse2024PaymentSecureWebhook!@#';
 }
 
 function getReturnUrl(webhookUrl) {
@@ -83,7 +93,7 @@ async function notifyMainService(sessionData, status) {
     // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
     const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
     // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
-    const webhookSecret = getWebhookSecret(sessionData.webhookSecret);
+    const webhookSecret = getWebhookSecret(sessionData.webhookSecret, webhookUrl);
     
     const payload = {
       sessionId: sessionData.sessionId,
@@ -303,14 +313,14 @@ app.get('/', async (req, res) => {
 
     <script>
         const sessionData = {
-            userId: '` + (userId || '') + `',
-            sessionId: '` + (sessionId || '') + `',
-            returnTo: '` + (returnTo || '') + `',
-            webhookUrl: '` + (webhookUrl || '') + `',
-            webhookSecret: '` + (webhookSecret || '') + `'
+            userId: '${userId || ''}',
+            sessionId: '${sessionId || ''}',
+            returnTo: '${returnTo || ''}',
+            webhookUrl: '${webhookUrl || ''}',
+            webhookSecret: '${webhookSecret || ''}'
         };
 
-        const packages = ` + JSON.stringify(packages) + `;
+        const packages = ${JSON.stringify(packages)};
 
         function getGradientClass(index) {
             const gradients = ['gradient-blue', 'gradient-purple', 'gradient-pink', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-indigo'];
@@ -342,18 +352,21 @@ app.get('/', async (req, res) => {
 
             grid.innerHTML = packages.map((pkg, index) => {
                 const isPopular = pkg.isPopular || pkg.is_popular;
-                const bonusHtml = pkg.bonusCoins > 0 ? '<div class="bonus-info">보너스 +' + pkg.bonusCoins + '엽전</div>' : '';
                 
-                return '<div class="package-card ' + (isPopular ? 'popular' : '') + '" onclick="selectPackage(' + pkg.id + ')">' +
-                    (isPopular ? '<div class="popular-badge">인기</div>' : '') +
-                    '<div class="package-icon ' + getGradientClass(index) + '">💰</div>' +
-                    '<div class="package-name">' + pkg.name + '</div>' +
-                    '<div class="package-details">' +
-                        '<div class="coins-info">' + pkg.coins + '엽전</div>' +
-                        bonusHtml +
-                    '</div>' +
-                    '<div class="package-price">₩' + formatPrice(pkg.price) + '</div>' +
-                '</div>';
+                return \`
+                    <div class="package-card \${isPopular ? 'popular' : ''}" onclick="selectPackage(\${pkg.id})">
+                        \${isPopular ? '<div class="popular-badge">인기</div>' : ''}
+                        <div class="package-icon \${getGradientClass(index)}">💰</div>
+                        <div class="package-name">\${pkg.name}</div>
+                        <div class="package-details">
+                            <div class="coins-info">\${pkg.coins}엽전</div>
+                            \${pkg.bonusCoins > 0 ? \`<div class="bonus-info">보너스 +\${pkg.bonusCoins}엽전</div>\` : ''}
+                        </div>
+                        <div class="package-price">
+                            ₩\${formatPrice(pkg.price)}
+                        </div>
+                    </div>
+                \`;
             }).join('');
         }
 
@@ -369,7 +382,7 @@ app.get('/', async (req, res) => {
             }
 
             const IMP = window.IMP;
-            IMP.init('` + IAMPORT_IMP_CODE + `');
+            IMP.init('${IAMPORT_IMP_CODE}');
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
@@ -409,37 +422,19 @@ app.get('/', async (req, res) => {
                             status: 'completed',
                             transactionId: rsp.imp_uid,
                             merchantUid: rsp.merchant_uid,
-                            webhookUrl: sessionData.webhookUrl,
-                            webhookSecret: sessionData.webhookSecret
+                            webhookUrl: sessionData.webhookUrl
                         })
-                    }).then(response => {
-                        console.log('Webhook response status:', response.status);
-                        if (!response.ok) {
-                            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-                        }
-                        return response.json();
-                    }).then(result => {
-                        console.log('Webhook result:', result);
-                        if (result.success) {
-                            alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            console.log('Redirecting to:', finalUrl);
-                            window.location.href = finalUrl;
-                        } else {
-                            console.error('Webhook failed:', result);
-                            alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            window.location.href = finalUrl;
-                        }
-                    }).catch(error => {
-                        console.error('Webhook error:', error);
-                        alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                        window.location.href = finalUrl;
-                    });
+                    }).then(response => response.json())
+                      .then(result => {
+                          console.log('Webhook result:', result);
+                          if (result.success) {
+                              alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                              const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                              const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                              console.log('Redirecting to:', finalUrl);
+                              window.location.href = finalUrl;
+                          }
+                      });
                 } else {
                     console.log('Payment failed:', rsp);
                     alert('결제에 실패했습니다: ' + rsp.error_msg);
@@ -455,9 +450,7 @@ app.get('/', async (req, res) => {
         document.addEventListener('DOMContentLoaded', renderPackages);
     </script>
 </body>
-</html>`;
-
-    res.send(htmlContent);
+</html>`);
   } catch (error) {
     console.error('Error serving payment page:', error);
     res.status(500).send('Internal Server Error');
@@ -469,7 +462,7 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook received:', req.body);
     
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl, webhookSecret } = req.body;
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl } = req.body;
     
     if (!sessionId || !userId) {
       return res.status(400).json({ success: false, error: 'Missing session data' });
@@ -482,8 +475,7 @@ app.post('/webhook', async (req, res) => {
       amount: amount,
       coins: coins,
       bonusCoins: bonusCoins || 0,
-      webhookUrl: webhookUrl,
-      webhookSecret: webhookSecret
+      webhookUrl: webhookUrl
     };
 
     const result = await notifyMainService(sessionData, status);
