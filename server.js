@@ -196,6 +196,14 @@ app.get('/', async (req, res) => {
         .faq-item { margin-bottom: 16px; }
         .faq-question { font-weight: 600; color: #111827; margin-bottom: 4px; }
         .faq-answer { font-size: 14px; color: #6b7280; }
+        
+        /* Custom Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: white; border-radius: 12px; padding: 24px; max-width: 320px; width: 90%; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        .modal-title { font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 12px; }
+        .modal-message { font-size: 14px; color: #6b7280; margin-bottom: 20px; line-height: 1.5; }
+        .modal-button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; }
+        .modal-button:hover { background: #2563eb; }
     </style>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.iamport.kr/v1/iamport.js"></script>
@@ -321,6 +329,31 @@ app.get('/', async (req, res) => {
             return new Intl.NumberFormat('ko-KR').format(parseFloat(price));
         }
 
+        function showModal(title, message, callback) {
+            const modalHtml = '<div class="modal-overlay" id="customModal">' +
+                '<div class="modal-content">' +
+                    '<div class="modal-title">' + title + '</div>' +
+                    '<div class="modal-message">' + message + '</div>' +
+                    '<button class="modal-button" onclick="closeModal()">확인</button>' +
+                '</div>' +
+            '</div>';
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            window.modalCallback = callback;
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('customModal');
+            if (modal) {
+                modal.remove();
+            }
+            if (window.modalCallback) {
+                window.modalCallback();
+                window.modalCallback = null;
+            }
+        }
+
         function getReturnUrl(webhookUrl) {
             if (!webhookUrl) {
                 console.error('No webhook URL provided');
@@ -364,7 +397,7 @@ app.get('/', async (req, res) => {
             console.log('Selected package:', selectedPackage);
             
             if (!sessionData.userId || !sessionData.sessionId) {
-                alert('세션 정보가 없습니다. 다시 시도해주세요.');
+                showModal('오류', '세션 정보가 없습니다. 다시 시도해주세요.');
                 return;
             }
 
@@ -421,28 +454,31 @@ app.get('/', async (req, res) => {
                     }).then(result => {
                         console.log('Webhook result:', result);
                         if (result.success) {
-                            alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            console.log('Redirecting to:', finalUrl);
-                            window.location.href = finalUrl;
+                            showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
+                                const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                                console.log('Redirecting to:', finalUrl);
+                                window.location.href = finalUrl;
+                            });
                         } else {
                             console.error('Webhook failed:', result);
-                            alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            window.location.href = finalUrl;
+                            showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                                window.location.href = finalUrl;
+                            });
                         }
                     }).catch(error => {
                         console.error('Webhook error:', error);
-                        alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
-                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                        window.location.href = finalUrl;
+                        showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                            window.location.href = finalUrl;
+                        });
                     });
                 } else {
                     console.log('Payment failed:', rsp);
-                    alert('결제에 실패했습니다: ' + rsp.error_msg);
+                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
                 }
             });
         }
