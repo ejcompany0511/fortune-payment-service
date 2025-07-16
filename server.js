@@ -475,13 +475,6 @@ app.get('/', async (req, res) => {
             console.log('channelKey:', channelKey);
             console.log('===========================');
             
-            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정
-            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-            const mobileCompleteUrl = returnUrl + '/api/payment/mobile-complete';
-            const finalReturnUrl = mobileCompleteUrl + (sessionData.returnTo ? '?returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
-            
-            console.log('Setting m_redirect_url to:', finalReturnUrl);
-            
             IMP.request_pay({
                 pg: pgProvider,
                 pay_method: 'card',
@@ -494,7 +487,6 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                m_redirect_url: finalReturnUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -557,45 +549,25 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
+                        // PC와 모바일 모두 동일한 모달 방식으로 처리
                         if (result.success) {
-                            if (isMobile) {
-                                // 모바일에서도 PC와 동일하게 알림 후 이동
-                                alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                            showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
                                 window.location.href = finalUrl;
-                            } else {
-                                // PC에서는 모달 후 이동
-                                showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
-                                    window.location.href = finalUrl;
-                                });
-                            }
+                            });
                         } else {
-                            if (isMobile) {
-                                // 모바일에서도 PC와 동일하게 알림 후 이동
-                                alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                            showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                                 window.location.href = finalUrl;
-                            } else {
-                                // PC에서는 모달 후 이동
-                                showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                                    window.location.href = finalUrl;
-                                });
-                            }
+                            });
                         }
                     }).catch(error => {
                         console.error('Webhook error:', error);
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                         
-                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
-                        if (isMobile) {
-                            // 모바일에서도 PC와 동일하게 알림 후 이동
-                            alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                        // PC와 모바일 모두 동일한 모달 방식으로 처리
+                        showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                             window.location.href = finalUrl;
-                        } else {
-                            showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                                window.location.href = finalUrl;
-                            });
-                        }
+                        });
                     });
                 } else {
                     console.log('Payment failed:', rsp);
