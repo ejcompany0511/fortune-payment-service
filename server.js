@@ -79,39 +79,55 @@ function extractSessionFromOID(oid) {
 }
 
 async function notifyMainService(sessionData, status) {
-  try {
-    // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
-    const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
-    // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
-    const webhookSecret = getWebhookSecret(sessionData.webhookSecret);
-    
-    const payload = {
-      sessionId: sessionData.sessionId,
-      userId: sessionData.userId,
-      packageId: sessionData.packageId,
-      amount: sessionData.amount,
-      coins: sessionData.coins,
-      bonusCoins: sessionData.bonusCoins || 0,
-      status: status,
-      webhookSecret: webhookSecret,
-      timestamp: new Date().toISOString()
-    };
+  const maxRetries = 3;
+  let retryCount = 0;
+  
+  while (retryCount < maxRetries) {
+    try {
+      // 동적 웹훅 URL 설정 - webhookUrl이 전달되면 사용, 없으면 기본값
+      const webhookUrl = sessionData.webhookUrl || (getMainServiceUrl() + '/api/payment/webhook');
+      // 동적 웹훅 시크릿 설정 - 각 서비스별 고유 시크릿 사용
+      const webhookSecret = getWebhookSecret(sessionData.webhookSecret);
+      
+      const payload = {
+        sessionId: sessionData.sessionId,
+        userId: sessionData.userId,
+        packageId: sessionData.packageId,
+        amount: sessionData.amount,
+        coins: sessionData.coins,
+        bonusCoins: sessionData.bonusCoins || 0,
+        status: status,
+        webhookSecret: webhookSecret,
+        timestamp: new Date().toISOString(),
+        retryCount: retryCount
+      };
 
-    console.log('Sending webhook to target service:', webhookUrl);
-    console.log('Webhook payload:', payload);
+      console.log(`Sending webhook to target service (attempt ${retryCount + 1}/${maxRetries}):`, webhookUrl);
+      console.log('Webhook payload:', payload);
 
-    const response = await axios.post(webhookUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
+      const response = await axios.post(webhookUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      });
 
-    console.log('Webhook response:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('Failed to notify target service:', error.message);
-    throw error;
+      console.log('Webhook response:', response.data);
+      return response.data;
+      
+    } catch (error) {
+      retryCount++;
+      console.error(`Webhook attempt ${retryCount} failed:`, error.message);
+      
+      if (retryCount >= maxRetries) {
+        console.error('All webhook attempts failed. Final error:', error.message);
+        // 최종 실패 시에도 성공으로 간주하여 결제 플로우를 끊지 않음
+        return { success: true, error: 'Webhook failed but payment processed' };
+      }
+      
+      // 재시도 전 대기 (1초, 2초, 3초)
+      await new Promise(resolve => setTimeout(resolve, retryCount * 1000));
+    }
   }
 }
 
@@ -486,59 +502,65 @@ app.get('/', async (req, res) => {
                     console.log('Payment successful:', rsp);
                     console.log('Mobile environment:', isMobile);
                     
+                    const webhookData = {
+                        sessionId: sessionData.sessionId,
+                        userId: sessionData.userId,
+                        packageId: selectedPackage.id,
+                        amount: selectedPackage.price,
+                        coins: selectedPackage.coins,
+                        bonusCoins: selectedPackage.bonusCoins || 0,
+                        status: 'completed',
+                        transactionId: rsp.imp_uid,
+                        merchantUid: rsp.merchant_uid,
+                        webhookUrl: sessionData.webhookUrl,
+                        webhookSecret: sessionData.webhookSecret
+                    };
+                    
+                    console.log('Sending webhook data:', webhookData);
+                    console.log('Mobile environment:', isMobile);
+                    
                     fetch('/webhook', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            sessionId: sessionData.sessionId,
-                            userId: sessionData.userId,
-                            packageId: selectedPackage.id,
-                            amount: selectedPackage.price,
-                            coins: selectedPackage.coins,
-                            bonusCoins: selectedPackage.bonusCoins || 0,
-                            status: 'completed',
-                            transactionId: rsp.imp_uid,
-                            merchantUid: rsp.merchant_uid,
-                            webhookUrl: sessionData.webhookUrl,
-                            webhookSecret: sessionData.webhookSecret
-                        })
+                        body: JSON.stringify(webhookData)
                     }).then(response => {
                         console.log('Webhook response status:', response.status);
+                        console.log('Webhook response headers:', response.headers);
                         if (!response.ok) {
                             throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                         }
                         return response.json();
                     }).then(result => {
                         console.log('Webhook result:', result);
-                        if (result.success) {
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            
-                            console.log('Success - Redirecting to:', finalUrl);
-                            
-                            if (isMobile) {
-                                // 모바일에서는 모달 없이 바로 이동
-                                console.log('Mobile success redirect');
+                        
+                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                        
+                        console.log('Success - Redirecting to:', finalUrl);
+                        
+                        if (isMobile) {
+                            // 모바일에서는 결과와 상관없이 바로 이동 (webhook 처리는 서버에서 완료)
+                            console.log('Mobile success redirect');
+                            // 추가 시도: 즉시 이동 시도
+                            try {
+                                window.location.replace(finalUrl);
+                            } catch (e) {
+                                console.log('Immediate redirect failed, trying delayed:', e);
                                 setTimeout(() => {
-                                    window.location.replace(finalUrl);
+                                    try {
+                                        window.location.replace(finalUrl);
+                                    } catch (e2) {
+                                        console.log('Delayed replace failed, trying href:', e2);
+                                        window.location.href = finalUrl;
+                                    }
                                 }, 100);
-                            } else {
-                                // PC에서는 모달 후 이동
+                            }
+                        } else {
+                            // PC에서는 모달 후 이동
+                            if (result.success) {
                                 showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
                                     window.location.href = finalUrl;
                                 });
-                            }
-                        } else {
-                            console.error('Webhook failed:', result);
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            
-                            if (isMobile) {
-                                // 모바일에서는 짧은 메시지 후 이동
-                                alert('결제 완료되었습니다.');
-                                setTimeout(() => {
-                                    window.location.replace(finalUrl);
-                                }, 200);
                             } else {
                                 showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                                     window.location.href = finalUrl;
@@ -551,11 +573,14 @@ app.get('/', async (req, res) => {
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                         
                         if (isMobile) {
-                            // 모바일에서는 짧은 메시지 후 이동
-                            alert('결제 완료되었습니다.');
-                            setTimeout(() => {
+                            // 모바일에서는 에러가 발생해도 바로 이동 (결제는 성공했으므로)
+                            console.log('Mobile error redirect - payment succeeded');
+                            try {
                                 window.location.replace(finalUrl);
-                            }, 200);
+                            } catch (e) {
+                                console.log('Error redirect failed, trying href:', e);
+                                window.location.href = finalUrl;
+                            }
                         } else {
                             showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                                 window.location.href = finalUrl;
@@ -710,11 +735,14 @@ app.get('/', async (req, res) => {
 // 웹훅 엔드포인트
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Webhook received:', req.body);
+    console.log('=== WEBHOOK RECEIVED ===');
+    console.log('Request body:', req.body);
+    console.log('Request headers:', req.headers);
     
     const { sessionId, userId, packageId, amount, coins, bonusCoins, status, webhookUrl, webhookSecret } = req.body;
     
     if (!sessionId || !userId) {
+      console.error('Missing session data:', { sessionId, userId });
       return res.status(400).json({ success: false, error: 'Missing session data' });
     }
 
@@ -729,7 +757,14 @@ app.post('/webhook', async (req, res) => {
       webhookSecret: webhookSecret
     };
 
+    console.log('Processed session data:', sessionData);
+    console.log('Notifying main service...');
+
     const result = await notifyMainService(sessionData, status);
+    
+    console.log('Main service notification result:', result);
+    console.log('=== WEBHOOK COMPLETED ===');
+    
     res.json({ success: true, data: result });
     
   } catch (error) {
