@@ -157,10 +157,16 @@ app.get('/', async (req, res) => {
     console.log('Webhook URL:', webhookUrl);
     console.log('==========================================');
     
-    // 세션 정보 검증 - 필수 파라미터 확인
-    if (!sessionId || !userId || sessionId === 'session_' || !webhookUrl) {
+    // 세션 정보 검증 - 필수 파라미터 확인 (모바일 캐시 문제 대응)
+    if (!sessionId || !userId || sessionId === 'session_' || sessionId.length < 10 || !webhookUrl || !userEmail || !username) {
       console.log('=== INVALID SESSION - REDIRECTING TO MAIN SERVICE ===');
-      console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl });
+      console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl, userEmail, username });
+      console.log('Session ID length:', sessionId ? sessionId.length : 0);
+      
+      // 모바일 캐시 문제로 인한 불완전한 세션 정보 감지
+      if (sessionId === 'session_' || (sessionId && sessionId.length < 10)) {
+        console.log('Detected mobile cache issue - incomplete session ID');
+      }
       
       // 기본 리다이렉트 URL 설정
       const defaultRedirectUrl = returnTo || 'https://everyunse.com/';
@@ -542,8 +548,8 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                // 모바일도 PC와 동일하게 JavaScript callback으로 처리
-                // m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
+                // 모바일도 PC와 동일하게 외부페이지로 먼저 리다이렉트 (파라미터 보존)
+                m_redirect_url: window.location.origin + '/payment-complete?sessionId=' + sessionData.sessionId + '&userId=' + sessionData.userId + '&packageId=' + selectedPackage.id + '&coins=' + selectedPackage.coins + '&bonusCoins=' + (selectedPackage.bonusCoins || 0) + '&webhookUrl=' + encodeURIComponent(sessionData.webhookUrl) + '&webhookSecret=' + encodeURIComponent(sessionData.webhookSecret) + '&returnTo=' + encodeURIComponent(sessionData.returnTo || ''),
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -808,6 +814,63 @@ app.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error serving payment page:', error);
     res.status(500).send('Internal Server Error');
+  }
+});
+
+// 모바일 결제 완료 후 리다이렉트 처리 (PC와 동일한 flow 구현)
+app.get('/payment-complete', async (req, res) => {
+  try {
+    console.log('=== MOBILE PAYMENT COMPLETE REDIRECT ===');
+    console.log('Query parameters:', req.query);
+    
+    const { sessionId, userId, packageId, coins, bonusCoins, webhookUrl, webhookSecret, returnTo } = req.query;
+    
+    if (!sessionId || !userId || !packageId || !webhookUrl) {
+      console.log('Missing required parameters for mobile payment completion');
+      return res.redirect('https://everyunse.com/');
+    }
+    
+    // webhook 데이터 구성
+    const webhookData = {
+      sessionId: sessionId,
+      userId: userId,
+      packageId: packageId,
+      amount: parseInt(coins) * 100, // 예상 가격 (실제로는 패키지에서 가져와야 함)
+      coins: parseInt(coins),
+      bonusCoins: parseInt(bonusCoins) || 0,
+      status: 'completed',
+      transactionId: 'mobile_redirect_' + Date.now(),
+      merchantUid: 'mobile_' + sessionId + '_' + Date.now(),
+      webhookUrl: webhookUrl,
+      webhookSecret: webhookSecret
+    };
+    
+    console.log('Processing mobile payment webhook:', webhookData);
+    
+    // 로컬 webhook 호출
+    const webhookResponse = await fetch('/webhook', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Payment-Source': 'mobile-redirect'
+      },
+      body: JSON.stringify(webhookData)
+    });
+    
+    const webhookResult = await webhookResponse.json();
+    console.log('Mobile webhook result:', webhookResult);
+    
+    // 결제 완료 후 원래 페이지로 리다이렉트
+    const returnUrl = getReturnUrl(webhookUrl);
+    const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionId + '&t=' + Date.now();
+    
+    console.log('Mobile payment complete - redirecting to:', finalUrl);
+    res.redirect(finalUrl);
+    
+  } catch (error) {
+    console.error('Mobile payment completion error:', error);
+    res.redirect('https://everyunse.com/');
   }
 });
 
