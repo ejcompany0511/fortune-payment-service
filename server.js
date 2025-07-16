@@ -436,7 +436,7 @@ app.get('/', async (req, res) => {
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
             
             // 채널키 설정 (테스트 계정은 테스트 채널키 사용)
-            const channelKey = isTestAccount ? 'channel-key-test-sample' : 'channel-key-7a1b5809-3d48-43c8-9226-76df6ce1391c';
+            const channelKey = isTestAccount ? 'channel-key-bc5e12b1-11b3-4645-9033-1275c22d95cf' : 'channel-key-7a1b5809-3d48-43c8-9226-76df6ce1391c';
             
             console.log('PG Provider Selection:', {
                 userEmail: sessionData.userEmail,
