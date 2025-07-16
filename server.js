@@ -161,23 +161,6 @@ app.get('/', async (req, res) => {
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
     console.log('Available packages:', packages);
 
-    // 웹훅 URL을 세션 데이터에 저장
-    if (sessionId && webhookUrl) {
-      paymentSessions.set(sessionId, {
-        sessionId,
-        userId,
-        webhookUrl,
-        webhookSecret,
-        userEmail,
-        username,
-        returnTo,
-        timestamp: Date.now()
-      });
-      console.log('Stored session data for sessionId:', sessionId);
-    } else {
-      console.log('Session data not stored - missing sessionId or webhookUrl');
-    }
-
     // HTML 템플릿을 문자열 연결로 생성하여 변수 보간 문제 해결
     const htmlContent = `<!DOCTYPE html>
 <html lang="ko">
@@ -371,9 +354,14 @@ app.get('/', async (req, res) => {
             username: '` + (username || '') + `'
         };
 
-
-
         const packages = ` + JSON.stringify(packages) + `;
+        
+        // 디버깅 정보
+        console.log('=== PAYMENT PAGE DEBUG INFO ===');
+        console.log('sessionData:', sessionData);
+        console.log('packages:', packages);
+        console.log('window.IMP available:', !!window.IMP);
+        console.log('===============================');
 
         function getGradientClass(index) {
             const gradients = ['gradient-blue', 'gradient-purple', 'gradient-pink', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-indigo'];
@@ -445,7 +433,7 @@ app.get('/', async (req, res) => {
             }).join('');
         }
 
-        async function selectPackage(packageId) {
+        function selectPackage(packageId) {
             const selectedPackage = packages.find(p => p.id === packageId);
             if (!selectedPackage) return;
 
@@ -456,37 +444,24 @@ app.get('/', async (req, res) => {
                 return;
             }
 
-            // 세션 데이터 업데이트 (패키지 정보 및 웹훅 URL 포함)
-            try {
-                const updateResponse = await fetch('/api/update-session', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        sessionId: sessionData.sessionId,
-                        userId: sessionData.userId,
-                        packageId: selectedPackage.id,
-                        amount: selectedPackage.price,
-                        coins: selectedPackage.coins,
-                        bonusCoins: selectedPackage.bonusCoins || 0,
-                        webhookUrl: sessionData.webhookUrl,
-                        webhookSecret: sessionData.webhookSecret
-                    })
-                });
-
-                if (!updateResponse.ok) {
-                    throw new Error('세션 업데이트 실패');
-                }
-
-                const updateResult = await updateResponse.json();
-                console.log('Session updated successfully:', updateResult);
-            } catch (error) {
-                console.error('Session update error:', error);
-                showModal('오류', '세션 업데이트 중 문제가 발생했습니다.');
+            // Iamport 라이브러리 로드 확인
+            if (!window.IMP) {
+                console.error('Iamport SDK not loaded');
+                showModal('오류', '결제 시스템 로드에 실패했습니다. 페이지를 새로고침해주세요.');
                 return;
             }
 
             const IMP = window.IMP;
-            IMP.init('` + IAMPORT_IMP_CODE + `');
+            console.log('Iamport SDK loaded successfully');
+            
+            try {
+                IMP.init('` + IAMPORT_IMP_CODE + `');
+                console.log('Iamport initialized with code:', '` + IAMPORT_IMP_CODE + `');
+            } catch (error) {
+                console.error('Iamport initialization error:', error);
+                showModal('오류', '결제 시스템 초기화에 실패했습니다. 페이지를 새로고침해주세요.');
+                return;
+            }
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
@@ -523,12 +498,23 @@ app.get('/', async (req, res) => {
             console.log('channelKey:', channelKey);
             console.log('===========================');
             
-            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정 (외부 서비스 내부 엔드포인트)
-            const mobileCompleteUrl = window.location.origin + '/mobile-complete';
+            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정 - 직접 원본 URL로 이동하고 webhook은 별도 처리
+            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+            const finalReturnUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
             
-            console.log('Setting m_redirect_url to:', mobileCompleteUrl);
+            console.log('Setting m_redirect_url to:', finalReturnUrl);
             
-            IMP.request_pay({
+            console.log('Starting payment with parameters:', {
+                pg: pgProvider,
+                pay_method: 'card',
+                channel_key: channelKey,
+                merchant_uid: merchantUid,
+                name: selectedPackage.name,
+                amount: selectedPackage.price
+            });
+            
+            try {
+                IMP.request_pay({
                 pg: pgProvider,
                 pay_method: 'card',
                 channel_key: channelKey,
@@ -540,7 +526,8 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                m_redirect_url: mobileCompleteUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
+                // 모바일에서는 m_redirect_url을 사용하여 결제 완료 시 직접 이동
+                m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -579,22 +566,15 @@ app.get('/', async (req, res) => {
                     console.log('Selected package:', selectedPackage);
                     console.log('================================================');
                     
-                    // 메인 서비스 webhook 호출 - 재시도 로직 추가
-                    const webhookUrl = sessionData.webhookUrl + '/webhook';
-                    
-                    console.log('=== WEBHOOK CALL ATTEMPT ===');
-                    console.log('Target URL:', webhookUrl);
-                    console.log('Webhook data:', webhookData);
-                    
-                    fetch(webhookUrl, {
+                    // 로컬 webhook 호출 - 현재 외부 결제 서비스 내부에서 처리
+                    fetch('/webhook', {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest',
                             'X-Payment-Source': 'external-service'
                         },
-                        body: JSON.stringify(webhookData),
-                        timeout: 15000
+                        body: JSON.stringify(webhookData)
                     }).then(response => {
                         console.log('Webhook response status:', response.status);
                         console.log('Webhook response headers:', response.headers);
@@ -610,25 +590,55 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        // 웹훅 호출이 성공하면 바로 성공 페이지로 리다이렉트
-                        showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
-                            window.location.href = finalUrl + '?payment=success';
-                        });
+                        // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
+                        if (result.success) {
+                            if (isMobile) {
+                                // 모바일에서도 PC와 동일하게 알림 후 이동
+                                alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                                window.location.href = finalUrl;
+                            } else {
+                                // PC에서는 모달 후 이동
+                                showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
+                                    window.location.href = finalUrl;
+                                });
+                            }
+                        } else {
+                            if (isMobile) {
+                                // 모바일에서도 PC와 동일하게 알림 후 이동
+                                alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                                window.location.href = finalUrl;
+                            } else {
+                                // PC에서는 모달 후 이동
+                                showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                    window.location.href = finalUrl;
+                                });
+                            }
+                        }
                     }).catch(error => {
                         console.error('Webhook error:', error);
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                         
-                        // PC와 모바일 모두 동일한 모달 방식으로 처리
-                        showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                            window.location.href = finalUrl + '?payment=success&webhook_error=true';
-                        });
+                        // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
+                        if (isMobile) {
+                            // 모바일에서도 PC와 동일하게 알림 후 이동
+                            alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                            window.location.href = finalUrl;
+                        } else {
+                            showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                window.location.href = finalUrl;
+                            });
+                        }
                     });
                 } else {
                     console.log('Payment failed:', rsp);
                     showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
                 }
             });
+            } catch (error) {
+                console.error('Payment request error:', error);
+                showModal('오류', '결제 요청 중 오류가 발생했습니다: ' + error.message);
+            }
         }
 
         function goBack() {
@@ -769,109 +779,6 @@ app.get('/', async (req, res) => {
   }
 });
 
-// 모바일 결제 완료 리다이렉트 처리 엔드포인트
-app.get('/mobile-complete', async (req, res) => {
-  try {
-    console.log('=== MOBILE REDIRECT RECEIVED ===');
-    console.log('Query params:', req.query);
-    console.log('Headers:', req.headers);
-    
-    const { imp_uid, merchant_uid, imp_success } = req.query;
-    
-    if (!imp_uid || !merchant_uid) {
-      console.error('Missing payment parameters:', { imp_uid, merchant_uid });
-      return res.redirect(`https://www.everyunse.com?error=missing_parameters`);
-    }
-    
-    // merchant_uid에서 sessionId 추출
-    const sessionId = merchant_uid.toString().split('_')[1];
-    
-    console.log('Extracted sessionId:', sessionId);
-    
-    if (!sessionId) {
-      console.error('Could not extract sessionId from merchant_uid:', merchant_uid);
-      return res.redirect(`https://www.everyunse.com?error=invalid_session`);
-    }
-    
-    // 결제 실패 시 바로 리다이렉트
-    if (imp_success === 'false') {
-      console.log('Payment failed - redirecting to main service');
-      return res.redirect(`https://www.everyunse.com?error=payment_failed`);
-    }
-    
-    // 세션 데이터 조회
-    const sessionData = paymentSessions.get(sessionId);
-    if (!sessionData) {
-      console.error('Session not found for mobile payment:', sessionId);
-      console.log('Available sessions:', Array.from(paymentSessions.keys()));
-      console.log('Session map size:', paymentSessions.size);
-      return res.redirect(`https://www.everyunse.com?error=session_not_found`);
-    }
-
-    console.log('Found session data for mobile payment:', sessionData);
-    
-    // 코인 패키지 정보 조회
-    const packages = await getCoinPackages(sessionData.webhookUrl);
-    const selectedPackage = packages.find(pkg => pkg.id === sessionData.packageId);
-    
-    if (!selectedPackage) {
-      console.error('Package not found:', sessionData.packageId);
-      return res.redirect(`https://www.everyunse.com?error=package_not_found`);
-    }
-    
-    // 웹훅 데이터 준비
-    const webhookData = {
-      sessionId: sessionData.sessionId,
-      userId: sessionData.userId,
-      packageId: sessionData.packageId,
-      amount: selectedPackage.price,
-      coins: selectedPackage.coins,
-      bonusCoins: selectedPackage.bonusCoins || 0,
-      status: 'completed',
-      transactionId: imp_uid,
-      merchantUid: merchant_uid,
-      webhookUrl: sessionData.webhookUrl,
-      webhookSecret: sessionData.webhookSecret
-    };
-    
-    console.log('=== MOBILE PAYMENT SUCCESS - CALLING WEBHOOK ===');
-    console.log('Webhook data:', webhookData);
-    
-    // 웹훅 호출 (모바일에서도 동일하게 처리)
-    try {
-      const webhookResponse = await fetch(`${sessionData.webhookUrl}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-Payment-Source': 'mobile-complete'
-        },
-        body: JSON.stringify(webhookData)
-      });
-      
-      if (!webhookResponse.ok) {
-        throw new Error(`Webhook HTTP ${webhookResponse.status}`);
-      }
-      
-      const webhookResult = await webhookResponse.json();
-      console.log('Mobile webhook success:', webhookResult);
-      
-      // 웹훅 성공 시 홈페이지로 리다이렉트
-      res.redirect(`https://www.everyunse.com?payment=success`);
-      
-    } catch (webhookError) {
-      console.error('Mobile webhook error:', webhookError);
-      
-      // 웹훅 실패 시에도 홈페이지로 리다이렉트 (사용자에게는 알림)
-      res.redirect(`https://www.everyunse.com?payment=success&webhook_error=true`);
-    }
-    
-  } catch (error) {
-    console.error('Mobile redirect processing error:', error);
-    res.redirect(`https://www.everyunse.com?error=processing_error`);
-  }
-});
-
 // 웹훅 엔드포인트
 app.post('/webhook', async (req, res) => {
   try {
@@ -909,40 +816,6 @@ app.post('/webhook', async (req, res) => {
     
   } catch (error) {
     console.error('Webhook processing error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 세션 업데이트 엔드포인트 추가
-app.post('/api/update-session', (req, res) => {
-  try {
-    const { sessionId, userId, packageId, amount, coins, bonusCoins, webhookUrl, webhookSecret } = req.body;
-    
-    console.log('Updating session data:', { sessionId, userId, packageId, amount, coins, bonusCoins, webhookUrl });
-    
-    // 기존 세션 데이터 가져오기
-    const existingData = paymentSessions.get(sessionId) || {};
-    
-    // 세션 데이터 업데이트
-    const updatedData = {
-      ...existingData,
-      sessionId,
-      userId,
-      packageId,
-      amount,
-      coins,
-      bonusCoins,
-      webhookUrl: webhookUrl || existingData.webhookUrl,
-      webhookSecret: webhookSecret || existingData.webhookSecret,
-      timestamp: Date.now()
-    };
-    
-    paymentSessions.set(sessionId, updatedData);
-    console.log('Session updated successfully:', updatedData);
-    
-    res.json({ success: true, data: updatedData });
-  } catch (error) {
-    console.error('Session update error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
