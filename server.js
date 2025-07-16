@@ -475,6 +475,13 @@ app.get('/', async (req, res) => {
             console.log('channelKey:', channelKey);
             console.log('===========================');
             
+            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정
+            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+            const mobileCompleteUrl = returnUrl + '/api/payment/mobile-complete';
+            const finalReturnUrl = mobileCompleteUrl + '?sessionId=' + sessionData.sessionId + '&packageId=' + selectedPackage.id + (sessionData.returnTo ? '&returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
+            
+            console.log('Setting m_redirect_url to:', finalReturnUrl);
+            
             IMP.request_pay({
                 pg: pgProvider,
                 pay_method: 'card',
@@ -487,6 +494,7 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
+                m_redirect_url: finalReturnUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
