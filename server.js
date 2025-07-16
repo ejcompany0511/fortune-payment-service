@@ -480,8 +480,11 @@ app.get('/', async (req, res) => {
                     webhookUrl: sessionData.webhookUrl
                 }
             }, function(rsp) {
+                const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+                
                 if (rsp.success) {
                     console.log('Payment successful:', rsp);
+                    console.log('Mobile environment:', isMobile);
                     
                     fetch('/webhook', {
                         method: 'POST',
@@ -508,27 +511,56 @@ app.get('/', async (req, res) => {
                     }).then(result => {
                         console.log('Webhook result:', result);
                         if (result.success) {
-                            showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
-                                const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                                console.log('Redirecting to:', finalUrl);
-                                window.location.href = finalUrl;
-                            });
+                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                            
+                            console.log('Success - Redirecting to:', finalUrl);
+                            
+                            if (isMobile) {
+                                // 모바일에서는 모달 없이 바로 이동
+                                console.log('Mobile success redirect');
+                                setTimeout(() => {
+                                    window.location.replace(finalUrl);
+                                }, 100);
+                            } else {
+                                // PC에서는 모달 후 이동
+                                showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
+                                    window.location.href = finalUrl;
+                                });
+                            }
                         } else {
                             console.error('Webhook failed:', result);
-                            showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                                const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                                window.location.href = finalUrl;
-                            });
+                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                            
+                            if (isMobile) {
+                                // 모바일에서는 짧은 메시지 후 이동
+                                alert('결제 완료되었습니다.');
+                                setTimeout(() => {
+                                    window.location.replace(finalUrl);
+                                }, 200);
+                            } else {
+                                showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                    window.location.href = finalUrl;
+                                });
+                            }
                         }
                     }).catch(error => {
                         console.error('Webhook error:', error);
-                        showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                            const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                            window.location.href = finalUrl;
-                        });
+                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                        
+                        if (isMobile) {
+                            // 모바일에서는 짧은 메시지 후 이동
+                            alert('결제 완료되었습니다.');
+                            setTimeout(() => {
+                                window.location.replace(finalUrl);
+                            }, 200);
+                        } else {
+                            showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                window.location.href = finalUrl;
+                            });
+                        }
                     });
                 } else {
                     console.log('Payment failed:', rsp);
