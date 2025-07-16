@@ -410,7 +410,7 @@ app.get('/', async (req, res) => {
             
             // test 계정은 테스트 MID, 일반 계정은 상용 MID 사용
             const isTestAccount = sessionData.userEmail === 'test@test.com' || sessionData.username === 'test';
-            const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
+            const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis';
             
             IMP.request_pay({
                 pg: pgProvider,
