@@ -731,7 +731,7 @@ app.get('/mobile-complete', async (req, res) => {
     
     if (!imp_uid || !merchant_uid) {
       console.error('Missing payment parameters:', { imp_uid, merchant_uid });
-      return res.redirect(`https://www.everyunse.com/coins?error=missing_parameters`);
+      return res.redirect(`https://www.everyunse.com?error=missing_parameters`);
     }
     
     // merchant_uid에서 sessionId 추출
@@ -741,20 +741,81 @@ app.get('/mobile-complete', async (req, res) => {
     
     if (!sessionId) {
       console.error('Could not extract sessionId from merchant_uid:', merchant_uid);
-      return res.redirect(`https://www.everyunse.com/coins?error=invalid_session`);
+      return res.redirect(`https://www.everyunse.com?error=invalid_session`);
     }
     
-    // 메인 서비스의 mobile-complete 엔드포인트로 리다이렉트
-    const mainServiceUrl = 'https://www.everyunse.com';
-    const redirectUrl = `${mainServiceUrl}/api/payment/mobile-complete?sessionId=${sessionId}&imp_uid=${imp_uid}&merchant_uid=${merchant_uid}&imp_success=${imp_success}`;
+    // 결제 실패 시 바로 리다이렉트
+    if (imp_success === 'false') {
+      console.log('Payment failed - redirecting to main service');
+      return res.redirect(`https://www.everyunse.com?error=payment_failed`);
+    }
     
-    console.log('Redirecting to main service:', redirectUrl);
+    // 세션 데이터 조회
+    const sessionData = paymentSessions.get(sessionId);
+    if (!sessionData) {
+      console.error('Session not found for mobile payment:', sessionId);
+      return res.redirect(`https://www.everyunse.com?error=session_not_found`);
+    }
     
-    res.redirect(redirectUrl);
+    // 코인 패키지 정보 조회
+    const packages = await getCoinPackages(sessionData.webhookUrl);
+    const selectedPackage = packages.find(pkg => pkg.id === sessionData.packageId);
+    
+    if (!selectedPackage) {
+      console.error('Package not found:', sessionData.packageId);
+      return res.redirect(`https://www.everyunse.com?error=package_not_found`);
+    }
+    
+    // 웹훅 데이터 준비
+    const webhookData = {
+      sessionId: sessionData.sessionId,
+      userId: sessionData.userId,
+      packageId: sessionData.packageId,
+      amount: selectedPackage.price,
+      coins: selectedPackage.coins,
+      bonusCoins: selectedPackage.bonusCoins || 0,
+      status: 'completed',
+      transactionId: imp_uid,
+      merchantUid: merchant_uid,
+      webhookUrl: sessionData.webhookUrl,
+      webhookSecret: sessionData.webhookSecret
+    };
+    
+    console.log('=== MOBILE PAYMENT SUCCESS - CALLING WEBHOOK ===');
+    console.log('Webhook data:', webhookData);
+    
+    // 웹훅 호출 (모바일에서도 동일하게 처리)
+    try {
+      const webhookResponse = await fetch('http://localhost:3000/webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-Payment-Source': 'mobile-complete'
+        },
+        body: JSON.stringify(webhookData)
+      });
+      
+      if (!webhookResponse.ok) {
+        throw new Error(`Webhook HTTP ${webhookResponse.status}`);
+      }
+      
+      const webhookResult = await webhookResponse.json();
+      console.log('Mobile webhook success:', webhookResult);
+      
+      // 웹훅 성공 시 홈페이지로 리다이렉트
+      res.redirect(`https://www.everyunse.com?payment=success`);
+      
+    } catch (webhookError) {
+      console.error('Mobile webhook error:', webhookError);
+      
+      // 웹훅 실패 시에도 홈페이지로 리다이렉트 (사용자에게는 알림)
+      res.redirect(`https://www.everyunse.com?payment=success&webhook_error=true`);
+    }
     
   } catch (error) {
     console.error('Mobile redirect processing error:', error);
-    res.redirect(`https://www.everyunse.com/coins?error=processing_error`);
+    res.redirect(`https://www.everyunse.com?error=processing_error`);
   }
 });
 
