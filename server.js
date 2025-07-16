@@ -542,25 +542,47 @@ app.get('/', async (req, res) => {
                 // 모바일 환경 감지
                 const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
                 
+                console.log('=== GOBACK DEBUG ===');
+                console.log('isMobile:', isMobile);
+                console.log('sessionData.webhookUrl:', sessionData.webhookUrl);
+                console.log('sessionData.returnTo:', sessionData.returnTo);
+                
                 // 전달받은 returnUrl을 사용하여 원래 페이지로 이동
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                console.log('returnUrl:', returnUrl);
                 
-                console.log('GoBack - Mobile:', isMobile, 'Redirecting to:', finalUrl);
+                let finalUrl;
+                if (sessionData.returnTo) {
+                    finalUrl = returnUrl + '?returnTo=' + encodeURIComponent(sessionData.returnTo);
+                } else {
+                    finalUrl = returnUrl;
+                }
                 
+                console.log('finalUrl:', finalUrl);
+                console.log('==================');
+                
+                // 모바일에서는 더 강력한 처리
                 if (isMobile) {
-                    // 모바일에서는 location.replace 사용 (히스토리 덮어쓰기)
-                    window.location.replace(finalUrl);
+                    // 모바일에서는 약간의 지연 후 location.replace 사용
+                    setTimeout(() => {
+                        console.log('Mobile redirect with replace to:', finalUrl);
+                        window.location.replace(finalUrl);
+                    }, 100);
                 } else {
                     // PC에서는 일반적인 방법 사용
+                    console.log('PC redirect with href to:', finalUrl);
                     window.location.href = finalUrl;
                 }
             } catch (error) {
                 console.error('GoBack error:', error);
                 // 오류 발생 시 기본 페이지로 이동
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                if (/Mobile|Android|iPhone|iPad/.test(navigator.userAgent)) {
-                    window.location.replace(returnUrl);
+                const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+                
+                if (isMobile) {
+                    setTimeout(() => {
+                        window.location.replace(returnUrl);
+                    }, 100);
                 } else {
                     window.location.href = returnUrl;
                 }
