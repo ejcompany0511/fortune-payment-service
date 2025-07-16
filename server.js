@@ -125,8 +125,13 @@ app.get('/', async (req, res) => {
   try {
     const { userId, sessionId, returnTo, webhookUrl, webhookSecret, userEmail, username } = req.query;
     
-    // 사용자 정보 로깅
+    // 사용자 정보 로깅 (모바일/PC 구분)
+    const userAgent = req.headers['user-agent'] || '';
+    const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
+    
     console.log('=== PAYMENT SERVICE - User Info Debug ===');
+    console.log('Device Type:', isMobile ? 'Mobile' : 'PC');
+    console.log('User Agent:', userAgent);
     console.log('Raw query parameters:', req.query);
     console.log('User ID:', userId);
     console.log('User Email:', userEmail);
@@ -420,8 +425,18 @@ app.get('/', async (req, res) => {
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
             // test 계정은 테스트 MID, 일반 계정은 상용 MID 사용
-            const isTestAccount = sessionData.userEmail === 'test@test.com' || sessionData.username === 'test';
+            const isTestAccount = (sessionData.userEmail === 'test@test.com') || 
+                                 (sessionData.username === 'test') ||
+                                 (sessionData.userEmail === 'test');
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis';
+            
+            console.log('PG Provider Selection:', {
+                userEmail: sessionData.userEmail,
+                username: sessionData.username,
+                userId: sessionData.userId,
+                isTestAccount: isTestAccount,
+                pgProvider: pgProvider
+            });
             
             IMP.request_pay({
                 pg: pgProvider,
