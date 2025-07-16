@@ -163,7 +163,7 @@ app.get('/', async (req, res) => {
       console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl });
       
       // 기본 리다이렉트 URL 설정
-      const defaultRedirectUrl = returnTo || 'https://everyunse.com/coins';
+      const defaultRedirectUrl = returnTo || 'https://everyunse.com/';
       console.log('Redirecting to:', defaultRedirectUrl);
       
       return res.redirect(defaultRedirectUrl);
@@ -601,7 +601,7 @@ app.get('/', async (req, res) => {
                         // 세션 정보 재검증 후 리다이렉트
                         if (!sessionData.webhookUrl || !sessionData.returnTo) {
                             console.log('Session data missing after payment - redirecting to default');
-                            const defaultUrl = 'https://everyunse.com/coins';
+                            const defaultUrl = 'https://everyunse.com/';
                             if (isMobile) {
                                 alert('결제가 완료되었습니다!');
                                 window.location.href = defaultUrl;
