@@ -475,12 +475,10 @@ app.get('/', async (req, res) => {
             console.log('channelKey:', channelKey);
             console.log('===========================');
             
-            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정
-            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-            const mobileCompleteUrl = returnUrl + '/api/payment/mobile-complete';
-            const finalReturnUrl = mobileCompleteUrl + '?sessionId=' + sessionData.sessionId + '&packageId=' + selectedPackage.id + (sessionData.returnTo ? '&returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
+            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정 (외부 서비스 내부 엔드포인트)
+            const mobileCompleteUrl = window.location.origin + '/mobile-complete';
             
-            console.log('Setting m_redirect_url to:', finalReturnUrl);
+            console.log('Setting m_redirect_url to:', mobileCompleteUrl);
             
             IMP.request_pay({
                 pg: pgProvider,
@@ -494,7 +492,7 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                m_redirect_url: finalReturnUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
+                m_redirect_url: mobileCompleteUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -719,6 +717,44 @@ app.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error serving payment page:', error);
     res.status(500).send('Internal Server Error');
+  }
+});
+
+// 모바일 결제 완료 리다이렉트 처리 엔드포인트
+app.get('/mobile-complete', async (req, res) => {
+  try {
+    console.log('=== MOBILE REDIRECT RECEIVED ===');
+    console.log('Query params:', req.query);
+    console.log('Headers:', req.headers);
+    
+    const { imp_uid, merchant_uid, imp_success } = req.query;
+    
+    if (!imp_uid || !merchant_uid) {
+      console.error('Missing payment parameters:', { imp_uid, merchant_uid });
+      return res.redirect(`https://www.everyunse.com/coins?error=missing_parameters`);
+    }
+    
+    // merchant_uid에서 sessionId 추출
+    const sessionId = merchant_uid.toString().split('_')[1];
+    
+    console.log('Extracted sessionId:', sessionId);
+    
+    if (!sessionId) {
+      console.error('Could not extract sessionId from merchant_uid:', merchant_uid);
+      return res.redirect(`https://www.everyunse.com/coins?error=invalid_session`);
+    }
+    
+    // 메인 서비스의 mobile-complete 엔드포인트로 리다이렉트
+    const mainServiceUrl = 'https://www.everyunse.com';
+    const redirectUrl = `${mainServiceUrl}/api/payment/mobile-complete?sessionId=${sessionId}&imp_uid=${imp_uid}&merchant_uid=${merchant_uid}&imp_success=${imp_success}`;
+    
+    console.log('Redirecting to main service:', redirectUrl);
+    
+    res.redirect(redirectUrl);
+    
+  } catch (error) {
+    console.error('Mobile redirect processing error:', error);
+    res.redirect(`https://www.everyunse.com/coins?error=processing_error`);
   }
 });
 
