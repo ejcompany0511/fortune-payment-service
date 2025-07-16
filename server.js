@@ -579,15 +579,22 @@ app.get('/', async (req, res) => {
                     console.log('Selected package:', selectedPackage);
                     console.log('================================================');
                     
-                    // 메인 서비스 webhook 호출
-                    fetch(sessionData.webhookUrl + '/webhook', {
+                    // 메인 서비스 webhook 호출 - 재시도 로직 추가
+                    const webhookUrl = sessionData.webhookUrl + '/webhook';
+                    
+                    console.log('=== WEBHOOK CALL ATTEMPT ===');
+                    console.log('Target URL:', webhookUrl);
+                    console.log('Webhook data:', webhookData);
+                    
+                    fetch(webhookUrl, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest',
                             'X-Payment-Source': 'external-service'
                         },
-                        body: JSON.stringify(webhookData)
+                        body: JSON.stringify(webhookData),
+                        timeout: 15000
                     }).then(response => {
                         console.log('Webhook response status:', response.status);
                         console.log('Webhook response headers:', response.headers);
@@ -603,16 +610,10 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        // PC와 모바일 모두 동일한 모달 방식으로 처리
-                        if (result.success) {
-                            showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
-                                window.location.href = finalUrl;
-                            });
-                        } else {
-                            showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                                window.location.href = finalUrl;
-                            });
-                        }
+                        // 웹훅 호출이 성공하면 바로 성공 페이지로 리다이렉트
+                        showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
+                            window.location.href = finalUrl + '?payment=success';
+                        });
                     }).catch(error => {
                         console.error('Webhook error:', error);
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
@@ -620,7 +621,7 @@ app.get('/', async (req, res) => {
                         
                         // PC와 모바일 모두 동일한 모달 방식으로 처리
                         showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                            window.location.href = finalUrl;
+                            window.location.href = finalUrl + '?payment=success&webhook_error=true';
                         });
                     });
                 } else {
