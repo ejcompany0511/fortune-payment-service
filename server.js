@@ -530,22 +530,16 @@ app.get('/', async (req, res) => {
 
         function goBack() {
             try {
-                // 모바일에서 더 안정적인 뒤로가기 처리
-                if (window.history && window.history.length > 1) {
-                    // 브라우저 히스토리가 있으면 뒤로가기
-                    window.history.back();
-                } else {
-                    // 히스토리가 없으면 직접 이동
-                    const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                    const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                    window.location.href = finalUrl;
-                }
-            } catch (error) {
-                console.error('GoBack error:', error);
-                // 오류 발생 시 직접 이동
+                // 전달받은 returnUrl을 사용하여 원래 페이지로 이동
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
                 const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                console.log('GoBack - Redirecting to:', finalUrl);
                 window.location.href = finalUrl;
+            } catch (error) {
+                console.error('GoBack error:', error);
+                // 오류 발생 시 기본 페이지로 이동
+                const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                window.location.href = returnUrl;
             }
         }
 
