@@ -161,7 +161,9 @@ app.get('/', async (req, res) => {
         .header { position: sticky; top: 0; z-index: 50; background: white; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border-bottom: 1px solid #e5e7eb; }
         .header-content { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
         .header-left { display: flex; align-items: center; gap: 12px; }
-        .back-btn { background: none; border: none; color: #6b7280; padding: 8px; border-radius: 6px; cursor: pointer; }
+        .back-btn { background: none; border: none; color: #6b7280; padding: 12px; border-radius: 8px; cursor: pointer; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .back-btn:hover { background: #f3f4f6; color: #374151; }
+        .back-btn:active { background: #e5e7eb; transform: scale(0.95); }
         .header-title { font-size: 18px; font-weight: 600; color: #111827; }
         .balance-info { font-size: 14px; color: #6b7280; }
         
@@ -511,17 +513,56 @@ app.get('/', async (req, res) => {
                     });
                 } else {
                     console.log('Payment failed:', rsp);
-                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
+                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg, function() {
+                        // 결제 실패 시에도 원래 페이지로 이동
+                        goBack();
+                    });
                 }
             });
         }
 
         function goBack() {
-            const returnUrl = getReturnUrl(sessionData.webhookUrl);
-            window.location.href = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+            try {
+                // 모바일에서 더 안정적인 뒤로가기 처리
+                if (window.history && window.history.length > 1) {
+                    // 브라우저 히스토리가 있으면 뒤로가기
+                    window.history.back();
+                } else {
+                    // 히스토리가 없으면 직접 이동
+                    const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                    const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                    window.location.href = finalUrl;
+                }
+            } catch (error) {
+                console.error('GoBack error:', error);
+                // 오류 발생 시 직접 이동
+                const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                window.location.href = finalUrl;
+            }
         }
 
-        document.addEventListener('DOMContentLoaded', renderPackages);
+        // 모바일 환경 감지 및 추가 설정
+        function detectMobileAndSetup() {
+            const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+            console.log('Mobile device detected:', isMobile);
+            
+            if (isMobile) {
+                // 모바일에서 뒤로가기 버튼 강화
+                const backBtn = document.querySelector('.back-btn');
+                if (backBtn) {
+                    backBtn.style.fontSize = '18px';
+                    backBtn.style.padding = '14px';
+                    backBtn.style.minWidth = '48px';
+                    backBtn.style.minHeight = '48px';
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            detectMobileAndSetup();
+            renderPackages();
+        });
     </script>
 </body>
 </html>`;
