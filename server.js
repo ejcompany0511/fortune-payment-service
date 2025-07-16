@@ -531,8 +531,8 @@ app.get('/', async (req, res) => {
                     console.log('Selected package:', selectedPackage);
                     console.log('================================================');
                     
-                    // 로컬 webhook 호출 - 현재 외부 결제 서비스 내부에서 처리
-                    fetch('/webhook', {
+                    // 메인 서비스 webhook 호출
+                    fetch(sessionData.webhookUrl + '/webhook', {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
@@ -786,7 +786,7 @@ app.get('/mobile-complete', async (req, res) => {
     
     // 웹훅 호출 (모바일에서도 동일하게 처리)
     try {
-      const webhookResponse = await fetch('http://localhost:3000/webhook', {
+      const webhookResponse = await fetch(`${sessionData.webhookUrl}/webhook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
