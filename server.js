@@ -612,8 +612,11 @@ app.get('/', async (req, res) => {
                             return;
                         }
                         
+                        // 세션 정보 보존을 위한 더 안전한 URL 생성
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                        
+                        // 결제 완료 후 세션 정보를 포함한 안전한 URL 생성 (원래 페이지로 돌아가기)
+                        const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionData.sessionId + '&t=' + Date.now();
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
@@ -643,8 +646,10 @@ app.get('/', async (req, res) => {
                         }
                     }).catch(error => {
                         console.error('Webhook error:', error);
+                        
+                        // 세션 정보 보존을 위한 더 안전한 URL 생성 (원래 페이지로 돌아가기)
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                        const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
+                        const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionData.sessionId + '&t=' + Date.now();
                         
                         // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
                         if (isMobile) {
