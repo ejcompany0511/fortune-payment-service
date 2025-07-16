@@ -124,6 +124,17 @@ app.get('/health', (req, res) => {
 app.get('/', async (req, res) => {
   try {
     const { userId, sessionId, returnTo, webhookUrl, webhookSecret, userEmail, username } = req.query;
+    
+    // 사용자 정보 로깅
+    console.log('=== PAYMENT SERVICE - User Info Debug ===');
+    console.log('Raw query parameters:', req.query);
+    console.log('User ID:', userId);
+    console.log('User Email:', userEmail);
+    console.log('Username:', username);
+    console.log('Session ID:', sessionId);
+    console.log('Return To:', returnTo);
+    console.log('Webhook URL:', webhookUrl);
+    console.log('==========================================');
 
     const packages = await getCoinPackages(webhookUrl);
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
