@@ -426,11 +426,27 @@ app.get('/', async (req, res) => {
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
-            // test 계정은 테스트 MID와 테스트 채널키, 일반 계정은 실제 MID와 실제 채널키 사용
-            const isTestAccount = (sessionData.userEmail === 'test@test.com') || 
-                                 (sessionData.username === 'test') ||
-                                 (sessionData.userEmail === 'test') ||
-                                 (sessionData.userId === 122);
+            // test 계정 인식 로직 강화
+            console.log('=== TEST ACCOUNT DETECTION ===');
+            console.log('sessionData.userEmail:', sessionData.userEmail);
+            console.log('sessionData.username:', sessionData.username);
+            console.log('sessionData.userId:', sessionData.userId);
+            console.log('sessionData.userId type:', typeof sessionData.userId);
+            
+            // 다양한 test 계정 인식 방법
+            const emailCheck = sessionData.userEmail === 'test@test.com';
+            const usernameCheck = sessionData.username === 'test';
+            const userIdCheck = sessionData.userId === 122 || sessionData.userId === '122';
+            const emailTestCheck = sessionData.userEmail === 'test';
+            
+            console.log('Email check (test@test.com):', emailCheck);
+            console.log('Username check (test):', usernameCheck);
+            console.log('UserId check (122):', userIdCheck);
+            console.log('Email test check (test):', emailTestCheck);
+            
+            const isTestAccount = emailCheck || usernameCheck || userIdCheck || emailTestCheck;
+            
+            console.log('Final isTestAccount:', isTestAccount);
             
             // PG Provider 설정 (test 계정은 테스트 MID 사용)
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
@@ -438,14 +454,10 @@ app.get('/', async (req, res) => {
             // 채널키 설정 (테스트 계정은 테스트 채널키 사용)
             const channelKey = isTestAccount ? 'channel-key-bc5e12b1-11b3-4645-9033-1275c22d95cf' : 'channel-key-7a1b5809-3d48-43c8-9226-76df6ce1391c';
             
-            console.log('PG Provider Selection:', {
-                userEmail: sessionData.userEmail,
-                username: sessionData.username,
-                userId: sessionData.userId,
-                isTestAccount: isTestAccount,
-                pgProvider: pgProvider,
-                channelKey: channelKey
-            });
+            console.log('=== FINAL PG SETTINGS ===');
+            console.log('pgProvider:', pgProvider);
+            console.log('channelKey:', channelKey);
+            console.log('===========================');
             
             IMP.request_pay({
                 pg: pgProvider,
