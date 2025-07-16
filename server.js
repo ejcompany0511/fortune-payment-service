@@ -161,6 +161,23 @@ app.get('/', async (req, res) => {
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
     console.log('Available packages:', packages);
 
+    // 웹훅 URL을 세션 데이터에 저장
+    if (sessionId && webhookUrl) {
+      paymentSessions.set(sessionId, {
+        sessionId,
+        userId,
+        webhookUrl,
+        webhookSecret,
+        userEmail,
+        username,
+        returnTo,
+        timestamp: Date.now()
+      });
+      console.log('Stored session data for sessionId:', sessionId);
+    } else {
+      console.log('Session data not stored - missing sessionId or webhookUrl');
+    }
+
     // HTML 템플릿을 문자열 연결로 생성하여 변수 보간 문제 해결
     const htmlContent = `<!DOCTYPE html>
 <html lang="ko">
@@ -354,6 +371,8 @@ app.get('/', async (req, res) => {
             username: '` + (username || '') + `'
         };
 
+
+
         const packages = ` + JSON.stringify(packages) + `;
 
         function getGradientClass(index) {
@@ -426,7 +445,7 @@ app.get('/', async (req, res) => {
             }).join('');
         }
 
-        function selectPackage(packageId) {
+        async function selectPackage(packageId) {
             const selectedPackage = packages.find(p => p.id === packageId);
             if (!selectedPackage) return;
 
@@ -434,6 +453,35 @@ app.get('/', async (req, res) => {
             
             if (!sessionData.userId || !sessionData.sessionId) {
                 showModal('오류', '세션 정보가 없습니다. 다시 시도해주세요.');
+                return;
+            }
+
+            // 세션 데이터 업데이트 (패키지 정보 및 웹훅 URL 포함)
+            try {
+                const updateResponse = await fetch('/api/update-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: sessionData.sessionId,
+                        userId: sessionData.userId,
+                        packageId: selectedPackage.id,
+                        amount: selectedPackage.price,
+                        coins: selectedPackage.coins,
+                        bonusCoins: selectedPackage.bonusCoins || 0,
+                        webhookUrl: sessionData.webhookUrl,
+                        webhookSecret: sessionData.webhookSecret
+                    })
+                });
+
+                if (!updateResponse.ok) {
+                    throw new Error('세션 업데이트 실패');
+                }
+
+                const updateResult = await updateResponse.json();
+                console.log('Session updated successfully:', updateResult);
+            } catch (error) {
+                console.error('Session update error:', error);
+                showModal('오류', '세션 업데이트 중 문제가 발생했습니다.');
                 return;
             }
 
@@ -754,8 +802,12 @@ app.get('/mobile-complete', async (req, res) => {
     const sessionData = paymentSessions.get(sessionId);
     if (!sessionData) {
       console.error('Session not found for mobile payment:', sessionId);
+      console.log('Available sessions:', Array.from(paymentSessions.keys()));
+      console.log('Session map size:', paymentSessions.size);
       return res.redirect(`https://www.everyunse.com?error=session_not_found`);
     }
+
+    console.log('Found session data for mobile payment:', sessionData);
     
     // 코인 패키지 정보 조회
     const packages = await getCoinPackages(sessionData.webhookUrl);
@@ -856,6 +908,40 @@ app.post('/webhook', async (req, res) => {
     
   } catch (error) {
     console.error('Webhook processing error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 세션 업데이트 엔드포인트 추가
+app.post('/api/update-session', (req, res) => {
+  try {
+    const { sessionId, userId, packageId, amount, coins, bonusCoins, webhookUrl, webhookSecret } = req.body;
+    
+    console.log('Updating session data:', { sessionId, userId, packageId, amount, coins, bonusCoins, webhookUrl });
+    
+    // 기존 세션 데이터 가져오기
+    const existingData = paymentSessions.get(sessionId) || {};
+    
+    // 세션 데이터 업데이트
+    const updatedData = {
+      ...existingData,
+      sessionId,
+      userId,
+      packageId,
+      amount,
+      coins,
+      bonusCoins,
+      webhookUrl: webhookUrl || existingData.webhookUrl,
+      webhookSecret: webhookSecret || existingData.webhookSecret,
+      timestamp: Date.now()
+    };
+    
+    paymentSessions.set(sessionId, updatedData);
+    console.log('Session updated successfully:', updatedData);
+    
+    res.json({ success: true, data: updatedData });
+  } catch (error) {
+    console.error('Session update error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
