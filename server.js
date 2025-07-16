@@ -465,6 +465,10 @@ app.get('/', async (req, res) => {
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
+            // 모바일 환경 감지
+            const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+            console.log('Mobile environment detected:', isMobile);
+            
             // test 계정 인식 로직 강화
             console.log('=== TEST ACCOUNT DETECTION ===');
             console.log('sessionData.userEmail:', sessionData.userEmail);
