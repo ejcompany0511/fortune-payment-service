@@ -391,25 +391,72 @@ app.get('/', async (req, res) => {
         }
 
         function showModal(title, message, callback) {
-            const modalHtml = '<div class="modal-overlay" id="customModal">' +
-                '<div class="modal-content">' +
-                    '<div class="modal-title">' + title + '</div>' +
-                    '<div class="modal-message">' + message + '</div>' +
-                    '<button class="modal-button" onclick="closeModal()">확인</button>' +
+            const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+            
+            console.log('=== SHOW MODAL DEBUG ===');
+            console.log('Title:', title);
+            console.log('Message:', message);
+            console.log('Is Mobile:', isMobile);
+            console.log('Document ready state:', document.readyState);
+            console.log('========================');
+            
+            // 기존 모달이 있으면 제거
+            const existingModal = document.getElementById('customModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // 모바일과 PC 모두 동일하게 처리하되, 모바일에서는 더 강력한 스타일 적용
+            const zIndex = isMobile ? 99999 : 9999;
+            const modalHtml = '<div class="modal-overlay" id="customModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: ' + zIndex + '; -webkit-overflow-scrolling: touch;">' +
+                '<div class="modal-content" style="background: white; padding: 25px; border-radius: 12px; max-width: 320px; width: 90%; text-align: center; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); margin: 20px; position: relative;">' +
+                    '<div class="modal-title" style="font-size: 20px; font-weight: bold; margin-bottom: 20px; color: #333; line-height: 1.4;">' + title + '</div>' +
+                    '<div class="modal-message" style="font-size: 16px; color: #666; margin-bottom: 25px; line-height: 1.5;">' + message + '</div>' +
+                    '<button class="modal-button" onclick="closeModal()" style="background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; min-width: 100px; width: 100%; transition: background-color 0.2s;">확인</button>' +
                 '</div>' +
             '</div>';
             
             document.body.insertAdjacentHTML('beforeend', modalHtml);
             
             window.modalCallback = callback;
+            
+            // 모달이 표시된 후 즉시 포커스 설정
+            const button = document.querySelector('#customModal .modal-button');
+            if (button) {
+                button.focus();
+                // 모바일에서 터치 이벤트도 추가
+                if (isMobile) {
+                    button.addEventListener('touchstart', function(e) {
+                        e.preventDefault();
+                        closeModal();
+                    });
+                }
+            }
+            
+            // 모달 오버레이 클릭 방지
+            const overlay = document.getElementById('customModal');
+            if (overlay) {
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) {
+                        // 오버레이 클릭해도 모달 닫지 않음 (확인 버튼만으로 닫기)
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                });
+            }
+            
+            console.log('Modal created and displayed');
         }
 
         function closeModal() {
+            console.log('closeModal called');
             const modal = document.getElementById('customModal');
             if (modal) {
                 modal.remove();
+                console.log('Modal removed');
             }
             if (window.modalCallback) {
+                console.log('Executing modal callback');
                 window.modalCallback();
                 window.modalCallback = null;
             }
@@ -609,9 +656,13 @@ app.get('/', async (req, res) => {
                             console.log('Session data missing after payment - redirecting to default');
                             const defaultUrl = 'https://everyunse.com/';
                             // PC와 모바일 모두 동일한 모달 사용
-                            showModal('결제 완료', '결제가 완료되었습니다!', function() {
-                                window.location.href = defaultUrl;
-                            });
+                            console.log('Showing modal for missing session data');
+                            setTimeout(() => {
+                                showModal('결제 완료', '결제가 완료되었습니다!', function() {
+                                    console.log('Modal callback executed - redirecting to default');
+                                    window.location.href = defaultUrl;
+                                });
+                            }, 100);
                             return;
                         }
                         
@@ -626,14 +677,23 @@ app.get('/', async (req, res) => {
                         // PC와 모바일 모두 동일하게 모달로 처리
                         if (result.success) {
                             // PC와 모바일 모두 동일한 모달 사용
-                            showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
-                                window.location.href = finalUrl;
-                            });
+                            console.log('Payment successful - showing success modal');
+                            // 모바일에서 안정적인 모달 표시를 위해 약간의 지연 추가
+                            setTimeout(() => {
+                                showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
+                                    console.log('Success modal callback - redirecting to:', finalUrl);
+                                    window.location.href = finalUrl;
+                                });
+                            }, 100);
                         } else {
                             // PC와 모바일 모두 동일한 모달 사용
-                            showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                                window.location.href = finalUrl;
-                            });
+                            console.log('Payment completed but with error - showing error modal');
+                            setTimeout(() => {
+                                showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                    console.log('Error modal callback - redirecting to:', finalUrl);
+                                    window.location.href = finalUrl;
+                                });
+                            }, 100);
                         }
                     }).catch(error => {
                         console.error('Webhook error:', error);
@@ -643,18 +703,24 @@ app.get('/', async (req, res) => {
                         const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionData.sessionId + '&t=' + Date.now();
                         
                         // PC와 모바일 모두 동일한 모달로 처리 (webhook 처리 후 수동 이동)
-                        showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
-                            window.location.href = finalUrl;
-                        });
+                        setTimeout(() => {
+                            showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
+                                window.location.href = finalUrl;
+                            });
+                        }, 100);
                     });
                 } else {
                     console.log('Payment failed:', rsp);
-                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
+                    setTimeout(() => {
+                        showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
+                    }, 100);
                 }
             });
             } catch (error) {
                 console.error('Payment request error:', error);
-                showModal('오류', '결제 요청 중 오류가 발생했습니다: ' + error.message);
+                setTimeout(() => {
+                    showModal('오류', '결제 요청 중 오류가 발생했습니다: ' + error.message);
+                }, 100);
             }
         }
 
