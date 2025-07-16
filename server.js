@@ -432,7 +432,7 @@ app.get('/', async (req, res) => {
                                  (sessionData.userEmail === 'test') ||
                                  (sessionData.userId === 122);
             
-            // PG Provider 설정
+            // PG Provider 설정 (test 계정은 테스트 MID 사용)
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
             
             // 채널키 설정 (테스트 계정은 테스트 채널키 사용)
@@ -527,16 +527,31 @@ app.get('/', async (req, res) => {
 
         function goBack() {
             try {
+                // 모바일 환경 감지
+                const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
+                
                 // 전달받은 returnUrl을 사용하여 원래 페이지로 이동
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
                 const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
-                console.log('GoBack - Redirecting to:', finalUrl);
-                window.location.href = finalUrl;
+                
+                console.log('GoBack - Mobile:', isMobile, 'Redirecting to:', finalUrl);
+                
+                if (isMobile) {
+                    // 모바일에서는 location.replace 사용 (히스토리 덮어쓰기)
+                    window.location.replace(finalUrl);
+                } else {
+                    // PC에서는 일반적인 방법 사용
+                    window.location.href = finalUrl;
+                }
             } catch (error) {
                 console.error('GoBack error:', error);
                 // 오류 발생 시 기본 페이지로 이동
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
-                window.location.href = returnUrl;
+                if (/Mobile|Android|iPhone|iPad/.test(navigator.userAgent)) {
+                    window.location.replace(returnUrl);
+                } else {
+                    window.location.href = returnUrl;
+                }
             }
         }
 
