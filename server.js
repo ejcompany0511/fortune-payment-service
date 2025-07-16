@@ -475,9 +475,10 @@ app.get('/', async (req, res) => {
             console.log('channelKey:', channelKey);
             console.log('===========================');
             
-            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정 - 직접 원본 URL로 이동하고 webhook은 별도 처리
+            // 모바일에서 결제 완료 후 리다이렉트할 URL 설정
             const returnUrl = getReturnUrl(sessionData.webhookUrl);
-            const finalReturnUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
+            const mobileCompleteUrl = returnUrl + '/api/payment/mobile-complete';
+            const finalReturnUrl = mobileCompleteUrl + (sessionData.returnTo ? '?returnTo=' + encodeURIComponent(sessionData.returnTo) : '');
             
             console.log('Setting m_redirect_url to:', finalReturnUrl);
             
@@ -493,8 +494,7 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                // 모바일에서는 m_redirect_url을 사용하여 결제 완료 시 직접 이동
-                m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
+                m_redirect_url: finalReturnUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -557,7 +557,7 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
+                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
                         if (result.success) {
                             if (isMobile) {
                                 // 모바일에서도 PC와 동일하게 알림 후 이동
@@ -586,7 +586,7 @@ app.get('/', async (req, res) => {
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                         
-                        // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
+                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
                         if (isMobile) {
                             // 모바일에서도 PC와 동일하게 알림 후 이동
                             alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
