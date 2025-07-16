@@ -516,12 +516,23 @@ app.get('/', async (req, res) => {
                         webhookSecret: sessionData.webhookSecret
                     };
                     
-                    console.log('Sending webhook data:', webhookData);
+                    console.log('=== PAYMENT SUCCESS - PREPARING WEBHOOK ===');
+                    console.log('Webhook data to send:', webhookData);
                     console.log('Mobile environment:', isMobile);
+                    console.log('Current location:', window.location.href);
+                    console.log('Payment response:', rsp);
+                    console.log('Session data:', sessionData);
+                    console.log('Selected package:', selectedPackage);
+                    console.log('================================================');
                     
+                    // 로컬 webhook 호출 - 현재 외부 결제 서비스 내부에서 처리
                     fetch('/webhook', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-Payment-Source': 'external-service'
+                        },
                         body: JSON.stringify(webhookData)
                     }).then(response => {
                         console.log('Webhook response status:', response.status);
@@ -538,30 +549,25 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        if (isMobile) {
-                            // 모바일에서는 결과와 상관없이 바로 이동 (webhook 처리는 서버에서 완료)
-                            console.log('Mobile success redirect');
-                            // 추가 시도: 즉시 이동 시도
-                            try {
-                                window.location.replace(finalUrl);
-                            } catch (e) {
-                                console.log('Immediate redirect failed, trying delayed:', e);
-                                setTimeout(() => {
-                                    try {
-                                        window.location.replace(finalUrl);
-                                    } catch (e2) {
-                                        console.log('Delayed replace failed, trying href:', e2);
-                                        window.location.href = finalUrl;
-                                    }
-                                }, 100);
-                            }
-                        } else {
-                            // PC에서는 모달 후 이동
-                            if (result.success) {
+                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
+                        if (result.success) {
+                            if (isMobile) {
+                                // 모바일에서도 PC와 동일하게 알림 후 이동
+                                alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
+                                window.location.href = finalUrl;
+                            } else {
+                                // PC에서는 모달 후 이동
                                 showModal('결제 완료', '결제가 완료되었습니다! 원래 페이지로 이동합니다.', function() {
                                     window.location.href = finalUrl;
                                 });
+                            }
+                        } else {
+                            if (isMobile) {
+                                // 모바일에서도 PC와 동일하게 알림 후 이동
+                                alert('결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                                window.location.href = finalUrl;
                             } else {
+                                // PC에서는 모달 후 이동
                                 showModal('알림', '결제는 완료되었으나 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                                     window.location.href = finalUrl;
                                 });
@@ -572,15 +578,11 @@ app.get('/', async (req, res) => {
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
                         
+                        // PC와 모바일 모두 동일한 방식으로 처리 (PC에서 정상 작동하므로)
                         if (isMobile) {
-                            // 모바일에서는 에러가 발생해도 바로 이동 (결제는 성공했으므로)
-                            console.log('Mobile error redirect - payment succeeded');
-                            try {
-                                window.location.replace(finalUrl);
-                            } catch (e) {
-                                console.log('Error redirect failed, trying href:', e);
-                                window.location.href = finalUrl;
-                            }
+                            // 모바일에서도 PC와 동일하게 알림 후 이동
+                            alert('결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.');
+                            window.location.href = finalUrl;
                         } else {
                             showModal('알림', '결제는 완료되었으나 통신 오류가 발생했습니다. 잠시 후 다시 확인해주세요.', function() {
                                 window.location.href = finalUrl;
