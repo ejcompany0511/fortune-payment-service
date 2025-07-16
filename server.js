@@ -156,6 +156,18 @@ app.get('/', async (req, res) => {
     console.log('Return To:', returnTo);
     console.log('Webhook URL:', webhookUrl);
     console.log('==========================================');
+    
+    // 세션 정보 검증 - 필수 파라미터 확인
+    if (!sessionId || !userId || sessionId === 'session_' || !webhookUrl) {
+      console.log('=== INVALID SESSION - REDIRECTING TO MAIN SERVICE ===');
+      console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl });
+      
+      // 기본 리다이렉트 URL 설정
+      const defaultRedirectUrl = returnTo || 'https://everyunse.com/coins';
+      console.log('Redirecting to:', defaultRedirectUrl);
+      
+      return res.redirect(defaultRedirectUrl);
+    }
 
     const packages = await getCoinPackages(webhookUrl);
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
@@ -585,6 +597,20 @@ app.get('/', async (req, res) => {
                         return response.json();
                     }).then(result => {
                         console.log('Webhook result:', result);
+                        
+                        // 세션 정보 재검증 후 리다이렉트
+                        if (!sessionData.webhookUrl || !sessionData.returnTo) {
+                            console.log('Session data missing after payment - redirecting to default');
+                            const defaultUrl = 'https://everyunse.com/coins';
+                            if (isMobile) {
+                                alert('결제가 완료되었습니다!');
+                                window.location.href = defaultUrl;
+                            } else {
+                                alert('결제가 완료되었습니다!');
+                                window.location.href = defaultUrl;
+                            }
+                            return;
+                        }
                         
                         const returnUrl = getReturnUrl(sessionData.webhookUrl);
                         const finalUrl = returnUrl + (sessionData.returnTo ? '?returnTo=' + sessionData.returnTo : '');
