@@ -427,7 +427,8 @@ app.get('/', async (req, res) => {
             // test 계정은 테스트 MID, 일반 계정은 실제 MID 사용
             const isTestAccount = (sessionData.userEmail === 'test@test.com') || 
                                  (sessionData.username === 'test') ||
-                                 (sessionData.userEmail === 'test');
+                                 (sessionData.userEmail === 'test') ||
+                                 (sessionData.userId === 122);
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
             
             console.log('PG Provider Selection:', {
