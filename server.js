@@ -426,24 +426,31 @@ app.get('/', async (req, res) => {
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
-            // test 계정은 테스트 MID, 일반 계정은 실제 MID 사용
+            // test 계정은 테스트 MID와 테스트 채널키, 일반 계정은 실제 MID와 실제 채널키 사용
             const isTestAccount = (sessionData.userEmail === 'test@test.com') || 
                                  (sessionData.username === 'test') ||
                                  (sessionData.userEmail === 'test') ||
                                  (sessionData.userId === 122);
+            
+            // PG Provider 설정
             const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
+            
+            // 채널키 설정 (테스트 계정은 테스트 채널키 사용)
+            const channelKey = isTestAccount ? 'channel-key-test-sample' : 'channel-key-7a1b5809-3d48-43c8-9226-76df6ce1391c';
             
             console.log('PG Provider Selection:', {
                 userEmail: sessionData.userEmail,
                 username: sessionData.username,
                 userId: sessionData.userId,
                 isTestAccount: isTestAccount,
-                pgProvider: pgProvider
+                pgProvider: pgProvider,
+                channelKey: channelKey
             });
             
             IMP.request_pay({
                 pg: pgProvider,
                 pay_method: 'card',
+                channel_key: channelKey,
                 merchant_uid: merchantUid,
                 name: selectedPackage.name,
                 amount: selectedPackage.price,
