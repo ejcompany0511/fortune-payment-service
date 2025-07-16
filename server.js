@@ -123,7 +123,7 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo, webhookUrl, webhookSecret } = req.query;
+    const { userId, sessionId, returnTo, webhookUrl, webhookSecret, userEmail, username } = req.query;
 
     const packages = await getCoinPackages(webhookUrl);
     console.log('Serving payment page for session:', sessionId, 'user:', userId);
@@ -315,7 +315,9 @@ app.get('/', async (req, res) => {
             sessionId: '` + (sessionId || '') + `',
             returnTo: '` + (returnTo || '') + `',
             webhookUrl: '` + (webhookUrl || '') + `',
-            webhookSecret: '` + (webhookSecret || '') + `'
+            webhookSecret: '` + (webhookSecret || '') + `',
+            userEmail: '` + (userEmail || '') + `',
+            username: '` + (username || '') + `'
         };
 
         const packages = ` + JSON.stringify(packages) + `;
@@ -406,8 +408,12 @@ app.get('/', async (req, res) => {
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
+            // test 계정은 테스트 MID, 일반 계정은 상용 MID 사용
+            const isTestAccount = sessionData.userEmail === 'test@test.com' || sessionData.username === 'test';
+            const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis.MOI1056941';
+            
             IMP.request_pay({
-                pg: 'html5_inicis',
+                pg: pgProvider,
                 pay_method: 'card',
                 merchant_uid: merchantUid,
                 name: selectedPackage.name,
