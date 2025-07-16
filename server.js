@@ -424,17 +424,13 @@ app.get('/', async (req, res) => {
 
             const merchantUid = 'order_' + sessionData.sessionId + '_' + Date.now();
             
-            // test 계정은 테스트 MID, 일반 계정은 상용 MID 사용
-            const isTestAccount = (sessionData.userEmail === 'test@test.com') || 
-                                 (sessionData.username === 'test') ||
-                                 (sessionData.userEmail === 'test');
-            const pgProvider = isTestAccount ? 'html5_inicis.INIpayTest' : 'html5_inicis';
+            // 모든 계정에 대해 MOI1056941 MID 사용
+            const pgProvider = 'html5_inicis.MOI1056941';
             
             console.log('PG Provider Selection:', {
                 userEmail: sessionData.userEmail,
                 username: sessionData.username,
                 userId: sessionData.userId,
-                isTestAccount: isTestAccount,
                 pgProvider: pgProvider
             });
             
