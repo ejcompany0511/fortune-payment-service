@@ -848,7 +848,7 @@ app.get('/payment-complete', async (req, res) => {
     console.log('Processing mobile payment webhook:', webhookData);
     
     // 로컬 webhook 호출
-    const webhookResponse = await fetch('/webhook', {
+    const webhookResponse = await fetch(`${req.protocol}://${req.get('host')}/webhook`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
