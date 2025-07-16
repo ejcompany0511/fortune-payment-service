@@ -520,10 +520,7 @@ app.get('/', async (req, res) => {
                     });
                 } else {
                     console.log('Payment failed:', rsp);
-                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg, function() {
-                        // 결제 실패 시에도 원래 페이지로 이동
-                        goBack();
-                    });
+                    showModal('결제 실패', '결제에 실패했습니다: ' + rsp.error_msg);
                 }
             });
         }
