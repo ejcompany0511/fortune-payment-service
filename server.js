@@ -861,12 +861,128 @@ app.get('/payment-complete', async (req, res) => {
     const webhookResult = await webhookResponse.json();
     console.log('Mobile webhook result:', webhookResult);
     
-    // 결제 완료 후 원래 페이지로 리다이렉트
+    // 결제 완료 후 확인 페이지로 먼저 이동 (PC와 유사한 경험 제공)
     const returnUrl = getReturnUrl(webhookUrl);
     const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionId + '&t=' + Date.now();
     
-    console.log('Mobile payment complete - redirecting to:', finalUrl);
-    res.redirect(finalUrl);
+    console.log('Mobile payment complete - showing confirmation page');
+    
+    // 모바일용 결제 완료 확인 페이지 HTML
+    const confirmationHtml = `
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>결제 완료 - EveryUnse</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .container {
+                background: white;
+                border-radius: 20px;
+                padding: 40px 30px;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                max-width: 400px;
+                width: 100%;
+            }
+            .success-icon {
+                font-size: 60px;
+                color: #4CAF50;
+                margin-bottom: 20px;
+            }
+            .title {
+                font-size: 24px;
+                font-weight: bold;
+                color: #333;
+                margin-bottom: 10px;
+            }
+            .subtitle {
+                font-size: 16px;
+                color: #666;
+                margin-bottom: 30px;
+                line-height: 1.5;
+            }
+            .coin-info {
+                background: #f8f9fa;
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 30px;
+            }
+            .coin-amount {
+                font-size: 20px;
+                font-weight: bold;
+                color: #7c3aed;
+                margin-bottom: 5px;
+            }
+            .coin-label {
+                font-size: 14px;
+                color: #666;
+            }
+            .confirm-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 15px 40px;
+                font-size: 16px;
+                font-weight: bold;
+                cursor: pointer;
+                width: 100%;
+                transition: transform 0.2s;
+            }
+            .confirm-btn:hover {
+                transform: translateY(-2px);
+            }
+            .footer {
+                margin-top: 20px;
+                font-size: 12px;
+                color: #999;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="success-icon">✓</div>
+            <div class="title">결제가 완료되었습니다!</div>
+            <div class="subtitle">엽전이 성공적으로 충전되었습니다.<br>이제 다양한 운세 서비스를 이용해보세요.</div>
+            
+            <div class="coin-info">
+                <div class="coin-amount">${coins}엽전</div>
+                <div class="coin-label">충전 완료</div>
+            </div>
+            
+            <button class="confirm-btn" onclick="goToMainPage()">확인</button>
+            
+            <div class="footer">
+                EveryUnse - 당신의 운세를 확인해보세요
+            </div>
+        </div>
+        
+        <script>
+            function goToMainPage() {
+                window.location.href = '${finalUrl}';
+            }
+            
+            // 5초 후 자동으로 이동 (사용자가 확인 버튼을 누르지 않을 경우)
+            setTimeout(function() {
+                goToMainPage();
+            }, 5000);
+        </script>
+    </body>
+    </html>
+    `;
+    
+    res.send(confirmationHtml);
     
   } catch (error) {
     console.error('Mobile payment completion error:', error);
