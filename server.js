@@ -530,8 +530,8 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                // 모바일에서는 m_redirect_url을 사용하여 결제 완료 시 직접 이동
-                m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
+                // 모바일도 PC와 동일하게 JavaScript callback으로 처리
+                // m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
@@ -547,6 +547,7 @@ app.get('/', async (req, res) => {
                     console.log('Payment successful:', rsp);
                     console.log('Mobile environment:', isMobile);
                     
+                    // PC와 모바일 모두 동일한 방식으로 webhook 처리
                     const webhookData = {
                         sessionId: sessionData.sessionId,
                         userId: sessionData.userId,
@@ -564,13 +565,9 @@ app.get('/', async (req, res) => {
                     console.log('=== PAYMENT SUCCESS - PREPARING WEBHOOK ===');
                     console.log('Webhook data to send:', webhookData);
                     console.log('Mobile environment:', isMobile);
-                    console.log('Current location:', window.location.href);
-                    console.log('Payment response:', rsp);
-                    console.log('Session data:', sessionData);
-                    console.log('Selected package:', selectedPackage);
                     console.log('================================================');
                     
-                    // 로컬 webhook 호출 - 현재 외부 결제 서비스 내부에서 처리
+                    // 로컬 webhook 호출 - PC와 모바일 모두 동일하게 처리
                     fetch('/webhook', {
                         method: 'POST',
                         headers: { 
@@ -594,10 +591,10 @@ app.get('/', async (req, res) => {
                         
                         console.log('Success - Redirecting to:', finalUrl);
                         
-                        // PC와 모바일 모두 동일한 방식으로 처리 (webhook 처리 후 수동 이동)
+                        // PC와 모바일 모두 동일하게 처리
                         if (result.success) {
                             if (isMobile) {
-                                // 모바일에서도 PC와 동일하게 알림 후 이동
+                                // 모바일에서는 alert로 알림 후 이동
                                 alert('결제가 완료되었습니다! 원래 페이지로 이동합니다.');
                                 window.location.href = finalUrl;
                             } else {
