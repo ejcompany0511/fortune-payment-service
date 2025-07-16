@@ -563,11 +563,23 @@ app.get('/', async (req, res) => {
                 
                 // 모바일에서는 더 강력한 처리
                 if (isMobile) {
-                    // 모바일에서는 약간의 지연 후 location.replace 사용
-                    setTimeout(() => {
-                        console.log('Mobile redirect with replace to:', finalUrl);
+                    // 모바일에서는 여러 방법을 시도
+                    console.log('Mobile redirect with replace to:', finalUrl);
+                    
+                    // 방법 1: 즉시 시도
+                    try {
                         window.location.replace(finalUrl);
-                    }, 100);
+                    } catch (e) {
+                        console.log('Replace failed, trying href:', e);
+                        // 방법 2: href로 시도
+                        try {
+                            window.location.href = finalUrl;
+                        } catch (e2) {
+                            console.log('Href failed, trying assign:', e2);
+                            // 방법 3: assign으로 시도
+                            window.location.assign(finalUrl);
+                        }
+                    }
                 } else {
                     // PC에서는 일반적인 방법 사용
                     console.log('PC redirect with href to:', finalUrl);
@@ -579,10 +591,21 @@ app.get('/', async (req, res) => {
                 const returnUrl = getReturnUrl(sessionData.webhookUrl);
                 const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
                 
+                console.log('Error fallback - returnUrl:', returnUrl);
+                
                 if (isMobile) {
-                    setTimeout(() => {
+                    // 모바일에서는 여러 방법을 시도
+                    try {
                         window.location.replace(returnUrl);
-                    }, 100);
+                    } catch (e) {
+                        console.log('Replace failed in error handler, trying href:', e);
+                        try {
+                            window.location.href = returnUrl;
+                        } catch (e2) {
+                            console.log('Href failed in error handler, trying assign:', e2);
+                            window.location.assign(returnUrl);
+                        }
+                    }
                 } else {
                     window.location.href = returnUrl;
                 }
@@ -602,6 +625,37 @@ app.get('/', async (req, res) => {
                     backBtn.style.padding = '14px';
                     backBtn.style.minWidth = '48px';
                     backBtn.style.minHeight = '48px';
+                    
+                    // 모바일에서 클릭 이벤트 강화
+                    backBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        console.log('Mobile back button clicked');
+                        
+                        // 강력한 모바일 리다이렉션
+                        const returnUrl = getReturnUrl(sessionData.webhookUrl);
+                        let finalUrl;
+                        if (sessionData.returnTo) {
+                            finalUrl = returnUrl + '?returnTo=' + encodeURIComponent(sessionData.returnTo);
+                        } else {
+                            finalUrl = returnUrl;
+                        }
+                        
+                        console.log('Mobile redirect to:', finalUrl);
+                        
+                        // 모바일에서 페이지 이동을 위한 다중 시도
+                        setTimeout(() => {
+                            window.location.replace(finalUrl);
+                        }, 50);
+                        
+                        // 백업 방법
+                        setTimeout(() => {
+                            if (window.location.href.includes('fortune-payment-service.onrender.com')) {
+                                window.location.href = finalUrl;
+                            }
+                        }, 200);
+                    });
                 }
             }
         }
