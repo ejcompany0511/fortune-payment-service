@@ -493,8 +493,8 @@ app.get('/', async (req, res) => {
                 buyer_tel: '',
                 buyer_addr: '',
                 buyer_postcode: '',
-                // 모바일에서는 m_redirect_url 사용하지 않고 webhook 처리 후 수동으로 이동
-                // m_redirect_url: finalReturnUrl, // 모바일에서 결제 완료 후 리다이렉트할 URL
+                // 모바일에서는 m_redirect_url을 사용하여 결제 완료 시 직접 이동
+                m_redirect_url: isMobile ? finalReturnUrl + '?mobile_payment=true&session=' + sessionData.sessionId + '&package=' + selectedPackage.id : undefined,
                 custom_data: {
                     sessionId: sessionData.sessionId,
                     userId: sessionData.userId,
