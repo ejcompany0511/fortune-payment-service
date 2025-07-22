@@ -9,6 +9,35 @@ const PORT = process.env.PORT || 3000;
 // 메모리 저장소
 const paymentSessions = new Map();
 
+// 세션 만료 시간 (1시간)
+const SESSION_TIMEOUT = 60 * 60 * 1000; // 1시간
+
+// 세션 유효성 검사 함수
+function isSessionValid(sessionId) {
+  if (!sessionId) return false;
+  
+  // 세션 ID에서 타임스탬프 추출
+  const match = sessionId.match(/session_(\d+)_/);
+  if (!match) return false;
+  
+  const createdTime = parseInt(match[1]);
+  const currentTime = Date.now();
+  
+  // 1시간 이내 생성된 세션만 유효
+  return (currentTime - createdTime) < SESSION_TIMEOUT;
+}
+
+// 사용자 검증 함수
+function validateUserSession(sessionId, userId, userEmail) {
+  if (!isSessionValid(sessionId)) {
+    console.log('Session expired:', sessionId);
+    return false;
+  }
+  
+  // 추가 검증 로직이 필요하면 여기에 추가
+  return true;
+}
+
 app.use(cors({
   origin: function (origin, callback) {
     // 모든 도메인에서의 접근을 허용 (복제 서비스들을 위해)
@@ -868,14 +897,26 @@ app.get('/payment-complete', async (req, res) => {
     console.log('=== MOBILE PAYMENT COMPLETE REDIRECT ===');
     console.log('Query parameters:', req.query);
     
-    const { sessionId, userId, packageId, coins, bonusCoins, webhookUrl, webhookSecret, returnTo } = req.query;
+    const { sessionId, userId, packageId, coins, bonusCoins, webhookUrl, webhookSecret, returnTo, imp_success, error_msg } = req.query;
     
     if (!sessionId || !userId || !packageId || !webhookUrl) {
       console.log('Missing required parameters for mobile payment completion');
       return res.redirect('https://everyunse.com/');
     }
     
-    // webhook 데이터 구성
+    // 결제 실패 확인 (CRITICAL FIX)
+    if (imp_success === 'false' || error_msg) {
+      console.log('❌ PAYMENT FAILED - imp_success:', imp_success, 'error_msg:', error_msg);
+      const returnUrl = getReturnUrl(webhookUrl);
+      const failureUrl = returnUrl + '?payment_failed=true&session=' + sessionId + '&error=' + encodeURIComponent(error_msg || '결제 실패') + '&t=' + Date.now();
+      
+      console.log('❌ Redirecting to failure page (NO COINS WILL BE CREDITED):', failureUrl);
+      return res.redirect(failureUrl);
+    }
+    
+    console.log('✅ PAYMENT SUCCESS - Processing coin credit');
+    
+    // webhook 데이터 구성 (결제 성공 시에만)
     const webhookData = {
       sessionId: sessionId,
       userId: userId,
@@ -890,7 +931,7 @@ app.get('/payment-complete', async (req, res) => {
       webhookSecret: webhookSecret
     };
     
-    console.log('Processing mobile payment webhook:', webhookData);
+    console.log('✅ Processing SUCCESS webhook (crediting coins):', webhookData);
     
     // 로컬 webhook 호출
     const webhookResponse = await fetch(`${req.protocol}://${req.get('host')}/webhook`, {
@@ -904,13 +945,13 @@ app.get('/payment-complete', async (req, res) => {
     });
     
     const webhookResult = await webhookResponse.json();
-    console.log('Mobile webhook result:', webhookResult);
+    console.log('✅ Mobile webhook result:', webhookResult);
     
     // 결제 완료 후 원래 페이지로 리다이렉트 (PC와 완전히 동일한 처리)
     const returnUrl = getReturnUrl(webhookUrl);
     const finalUrl = returnUrl + '?payment_complete=true&session=' + sessionId + '&t=' + Date.now();
     
-    console.log('Mobile payment complete - redirecting to original page:', finalUrl);
+    console.log('✅ Mobile payment complete - redirecting to original page:', finalUrl);
     
     // PC와 완전히 동일한 처리 - 바로 내부 페이지로 리다이렉트
     res.redirect(finalUrl);
