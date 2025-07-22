@@ -168,7 +168,7 @@ app.get('/health', (req, res) => {
 // 메인 엽전 상점 페이지
 app.get('/', async (req, res) => {
   try {
-    const { userId, sessionId, returnTo, webhookUrl, webhookSecret, userEmail, username } = req.query;
+    const { userId, sessionId, returnTo, webhookUrl, webhookSecret, userEmail, username, userPhone } = req.query;
     
     // 사용자 정보 로깅 (모바일/PC 구분)
     const userAgent = req.headers['user-agent'] || '';
@@ -181,6 +181,7 @@ app.get('/', async (req, res) => {
     console.log('User ID:', userId);
     console.log('User Email:', userEmail);
     console.log('Username:', username);
+    console.log('User Phone:', userPhone);
     console.log('Session ID:', sessionId);
     console.log('Return To:', returnTo);
     console.log('Webhook URL:', webhookUrl);
@@ -189,7 +190,7 @@ app.get('/', async (req, res) => {
     // 세션 정보 검증 - 필수 파라미터 확인 (모바일 캐시 문제 대응)
     if (!sessionId || !userId || sessionId === 'session_' || sessionId.length < 10 || !webhookUrl || !userEmail || !username) {
       console.log('=== INVALID SESSION - REDIRECTING TO MAIN SERVICE ===');
-      console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl, userEmail, username });
+      console.log('Missing or invalid parameters:', { sessionId, userId, webhookUrl, userEmail, username, userPhone });
       console.log('Session ID length:', sessionId ? sessionId.length : 0);
       
       // 모바일 캐시 문제로 인한 불완전한 세션 정보 감지
@@ -398,7 +399,8 @@ app.get('/', async (req, res) => {
             webhookUrl: '` + (webhookUrl || '') + `',
             webhookSecret: '` + (webhookSecret || '') + `',
             userEmail: '` + (userEmail || '') + `',
-            username: '` + (username || '') + `'
+            username: '` + (username || '') + `',
+            userPhone: '` + (userPhone || '') + `'
         };
 
         const packages = ` + JSON.stringify(packages) + `;
@@ -619,9 +621,9 @@ app.get('/', async (req, res) => {
                 merchant_uid: merchantUid,
                 name: selectedPackage.name,
                 amount: selectedPackage.price,
-                buyer_email: '',
-                buyer_name: 'EveryUnse User',
-                buyer_tel: '',
+                buyer_email: sessionData.userEmail || '',
+                buyer_name: sessionData.username || 'EveryUnse User',
+                buyer_tel: sessionData.userPhone || '',
                 buyer_addr: '',
                 buyer_postcode: '',
                 // 모바일도 PC와 동일하게 외부페이지로 먼저 리다이렉트 (파라미터 보존)
